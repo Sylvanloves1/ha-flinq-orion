@@ -22,7 +22,7 @@
     "step": {
       "init": {
         "title": "Bestaand meshnetwerk",
-        "description": "Kies observe voor passieve diagnostiek, query_only voor lezen, vendor_dp voor experimentele Tuya-DP-bediening of sig voor SIG-lichtmodellen. Gebruik uitsluitend bestaande keys en een eigen vrij unicast-controlleradres (decimale invoer). Bevestig dat dit adres nooit door Smart Life of een andere controller is gebruikt. Keys worden lokaal in HA-configuratieopslag bewaard, niet extra versleuteld; bescherm back-ups.",
+        "description": "Kies observe voor passieve diagnostiek, query_only voor lezen, vendor_dp voor experimentele Tuya-DP-bediening of sig voor SIG-lichtmodellen. Gebruik uitsluitend bestaande keys en een eigen vrij unicast-controlleradres (decimale invoer). Bevestig dat dit adres nooit door Smart Life of een andere controller is gebruikt. Keys worden lokaal in HA-configuratieopslag bewaard, niet extra versleuteld; bescherm back-ups. Import: selecteer de oude configuratie en klik Verzenden; de keys en metadata worden lokaal ingevuld. Er wordt niets in de oude integratie gewijzigd. Oud controlleradres: {previous_source}; neem dit niet over. Er blijft een eigen ongebruikt adres nodig.",
         "data": {
           "net_key": "NetKey (32 hextekens)",
           "app_key": "AppKey (32 hextekens)",
@@ -32,7 +32,8 @@
           "device_key": "DeviceKey (optioneel, 32 hextekens)",
           "source_address": "Eigen vrij controlleradres (decimaal)",
           "node_address": "Primair lampadres (176 = 0x00B0)",
-          "new_source_confirmed": "Ik bevestig dat het controlleradres uniek en nooit eerder gebruikt is"
+          "new_source_confirmed": "Ik bevestig dat het controlleradres uniek en nooit eerder gebruikt is",
+          "import_entry_id": "Bestaande meshgegevens importeren uit Tuya BLE Mesh (optioneel)"
         }
       },
       "profile": {
@@ -60,7 +61,13 @@
       "source_in_use": "Dit controlleradres is al in gebruik binnen HA",
       "confirm_unique_source": "Bevestig dat dit controlleradres nog nooit gebruikt is",
       "invalid_ct_range": "Vul de bewezen Kelvin-eindpunten in",
-      "invalid_countdown_range": "Vul het bewezen countdownmaximum in"
+      "invalid_countdown_range": "Vul het bewezen countdownmaximum in",
+      "import_missing_keys": "De geselecteerde configuratie bevat geen geldige bestaande SIG Mesh-keys",
+      "import_invalid_metadata": "Meshadres of IV Index ontbreekt of is ongeldig in de oude configuratie",
+      "import_wrong_device": "Selecteer de Tuya BLE Mesh-configuratie van dezelfde Bluetoothlamp",
+      "import_network_mismatch": "De NetKey hoort niet bij de ontvangen meshidentiteit of beacon",
+      "import_iv_mismatch": "De opgeslagen IV Index wijkt af van de geauthenticeerde beacon; herstel is vereist",
+      "import_key_refresh": "De geauthenticeerde beacon meldt een key-refresh; deze import kan niet veilig activeren"
     }
   },
   "entity": {

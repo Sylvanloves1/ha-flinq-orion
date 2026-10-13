@@ -22,7 +22,7 @@
     "step": {
       "init": {
         "title": "Existing mesh network",
-        "description": "Choose observe for passive diagnostics, query_only for reads, vendor_dp for experimental Tuya DP control or sig for SIG light models. Use existing keys and a dedicated unused unicast controller address (decimal input). Confirm this address has never been used by Smart Life or another controller. Keys are stored locally in HA config entry storage, without additional encryption; protect backups.",
+        "description": "Choose observe for passive diagnostics, query_only for reads, vendor_dp for experimental Tuya DP control or sig for SIG light models. Use existing keys and a dedicated unused unicast controller address (decimal input). Confirm this address has never been used by Smart Life or another controller. Keys are stored locally in HA config entry storage, without additional encryption; protect backups. Import: select the existing entry and submit; keys and metadata are prefilled locally. The original integration is unchanged. Previous controller address: {previous_source}; do not reuse it. A dedicated unused address is still required.",
         "data": {
           "net_key": "NetKey (32 hex characters)",
           "app_key": "AppKey (32 hex characters)",
@@ -32,7 +32,8 @@
           "device_key": "DeviceKey (optional, 32 hex characters)",
           "source_address": "Dedicated unused controller address (decimal)",
           "node_address": "Primary lamp address (176 = 0x00B0)",
-          "new_source_confirmed": "I confirm the controller address is unique and has never previously been used"
+          "new_source_confirmed": "I confirm the controller address is unique and has never previously been used",
+          "import_entry_id": "Import existing mesh credentials from Tuya BLE Mesh (optional)"
         }
       },
       "profile": {
@@ -60,7 +61,13 @@
       "source_in_use": "This controller address is already in use in HA",
       "confirm_unique_source": "Confirm the controller address has never been used",
       "invalid_ct_range": "Enter the proven Kelvin endpoints",
-      "invalid_countdown_range": "Enter the proven countdown maximum"
+      "invalid_countdown_range": "Enter the proven countdown maximum",
+      "import_missing_keys": "Selected entry has no valid existing SIG Mesh keys",
+      "import_invalid_metadata": "Mesh address or IV Index is missing or invalid in the existing entry",
+      "import_wrong_device": "Select the Tuya BLE Mesh entry for the same Bluetooth lamp",
+      "import_network_mismatch": "The NetKey does not match the received mesh identity or beacon",
+      "import_iv_mismatch": "Stored IV Index differs from the authenticated beacon; recovery is required",
+      "import_key_refresh": "Authenticated beacon indicates key refresh; this import cannot safely activate"
     }
   },
   "entity": {

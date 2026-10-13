@@ -5,7 +5,7 @@ from custom_components.flinq_orion.config_flow import OptionsFlow
 
 
 class Flow(OptionsFlow):
-    entry = SimpleNamespace(options={}, entry_id="target")
+    entry = SimpleNamespace(options={}, entry_id="target", data={"address": "DC:23:4F:6E:A0:12"})
 
     @property
     def config_entry(self):
@@ -63,7 +63,7 @@ async def test_options_profile_has_no_assumed_temperature_range():
 async def test_controller_address_cannot_be_shared_by_entries():
     f = flow()
     f.hass.config_entries.async_entries.return_value = [
-        SimpleNamespace(entry_id="other", options=inputs())
+        SimpleNamespace(entry_id="other", options=inputs(), domain="flinq_orion", data={})
     ]
     result = await f.async_step_init(inputs())
     assert result["errors"]["source_address"] == "source_in_use"

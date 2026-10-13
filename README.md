@@ -1,6 +1,6 @@
 # FlinQ Orion FQC8274 — experimental local integration
 
-Version **0.2.0** is a new independent Home Assistant custom integration, not a fork or wrapper. It includes an active local Tuya SIG Mesh client through Home Assistant's Bluetooth stack and ESPHome Bluetooth Proxies. **The code is tested offline; physical Orion firmware compatibility remains unverified.** Selecting a protocol enables an experiment, not a claim that all FQC8274 features work.
+Version **0.2.1** is a new independent Home Assistant custom integration, not a fork or wrapper. It includes an active local Tuya SIG Mesh client through Home Assistant's Bluetooth stack and ESPHome Bluetooth Proxies. **The code is tested offline; physical Orion firmware compatibility remains unverified.** Selecting a protocol enables an experiment, not a claim that all FQC8274 features work.
 
 Implemented:
 
@@ -23,7 +23,7 @@ Add **FlinQ Orion** via Settings → Devices & services or discovery. Without me
 
 ## One first hardware test (no keys required)
 
-1. Install version **0.2.0**, restart HA, and add FlinQ Orion with `DC:23:4F:6E:A0:12`. Leave Options at `observe`.
+1. Install version **0.2.1**, restart HA, and add FlinQ Orion with `DC:23:4F:6E:A0:12`. Leave Options at `observe`.
 2. Keep the lamp powered, close Smart Life completely and ensure `bluetooth-proxy-buiten` has a free active connection slot.
 3. In Developer tools → Actions run:
 
@@ -64,3 +64,14 @@ Turn the discovered light on/off and inspect both the physical lamp and the repo
 HA config-entry files store keys locally without additional encryption. Password selectors mask the UI; diagnostics redact keys. Protect HA files/backups. Durable sequence/replay files contain counters and a network fingerprint, not secret keys. Do not edit/delete them. Restoring an old backup or losing cryptographic state requires a new verified unused controller address or external validated recovery; a restored counter cannot establish that intervening sequence numbers were never transmitted.
 
 No daily Internet or Smart Life dependency exists in the command path. HA restart reloads credentials and skips unused sequence reservations. There is no reset or arbitrary packet-injection action. See [protocol findings](docs/protocol.md), [development](docs/development.md) and [test status](docs/testing.md).
+
+
+## Import keys from an existing Tuya BLE Mesh entry (0.2.1)
+
+1. Open FlinQ Orion → Options. Under **Import existing mesh credentials from Tuya BLE Mesh**, select the old entry for the same lamp and submit. Only matching MAC-address entries are offered.
+2. The form returns with NetKey/AppKey, optional DeviceKey, primary node address and IV Index prefilled. The importer verifies available standard network/node identities and captured secure beacons; incompatible evidence rejects the import. If no verifiable evidence is available, the debug event explicitly records that verification did not occur.
+3. Select a dedicated verified unused controller source address. The previous Tuya BLE Mesh controller address is shown for comparison and is blocked from reuse. Its sequence, reservation store, passwords and cloud credentials are never copied. Confirm uniqueness, keep **query_only** initially, and leave unconfirmed light metadata off.
+4. Before saving active mode, disable the old Tuya BLE Mesh config entry through HA to avoid competing GATT sessions. Disable it rather than deleting its credentials. Close Smart Life, finish the options form and allow read-only discovery to run.
+5. Download FlinQ diagnostics again and inspect `credential_import`, mesh/MIC errors, composition and DP reports. Power control is enabled later by selecting `vendor_dp` after a valid DP1 report (or explicitly testing SIG mode). Import is not proof that the AppKey is already bound to the vendor model.
+
+This optional onboarding helper reads Home Assistant's config-entry API. It never imports/calls the old integration's code, modifies its entry or depends on it for daily operation. Removing the old integration after verification does not remove credentials copied into FlinQ Orion.

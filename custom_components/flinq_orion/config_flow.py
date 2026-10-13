@@ -3,12 +3,19 @@
 import re
 from typing import Any, cast
 from homeassistant import config_entries
+from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 import voluptuous as vol
 from .const import DOMAIN, NAME, TARGET_ADDRESS
+from .credential_import import (
+    matching_entries,
+    import_credentials,
+    verify_network_evidence,
+    CredentialImportError,
+)
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -51,11 +58,60 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class OptionsFlow(config_entries.OptionsFlow):
     _mesh: dict | None = None
+    _import_defaults: dict | None = None
+    _previous_source: int | None = None
 
     async def async_step_init(self, user_input=None):
         errors = {}
-        old = self.config_entry.options
-        if user_input is not None:
+        old = {**self.config_entry.options, **(self._import_defaults or {})}
+        candidates = matching_entries(
+            self.hass.config_entries.async_entries("tuya_ble_mesh"),
+            self.config_entry.data["address"],
+        )
+        if user_input is not None and user_input.get("import_entry_id"):
+            selected = next(
+                (entry for entry in candidates if entry.entry_id == user_input["import_entry_id"]),
+                None,
+            )
+            if selected is None:
+                errors["base"] = "import_wrong_device"
+            else:
+                try:
+                    credentials, previous_source = import_credentials(
+                        selected, self.config_entry.data["address"]
+                    )
+                    info = bluetooth.async_last_service_info(
+                        self.hass, self.config_entry.data["address"], connectable=False
+                    )
+                    runtime = getattr(self.config_entry, "runtime_data", None)
+                    records = list(runtime.coordinator.records) if runtime is not None else []
+                    verified = verify_network_evidence(
+                        credentials, info.service_data if info else {}, records
+                    )
+                except CredentialImportError as err:
+                    errors["base"] = err.reason
+                else:
+                    self._import_defaults = {
+                        **credentials,
+                        "transport_mode": "query_only",
+                        "source_address": 0,
+                        "new_source_confirmed": False,
+                        "imported_source_address": previous_source,
+                    }
+                    self._previous_source = previous_source
+                    if runtime is not None:
+                        runtime.coordinator.record(
+                            {
+                                "kind": "credential_import",
+                                "network_identity_verified": verified,
+                                "previous_controller_address": previous_source,
+                            }
+                        )
+                    return await self.async_step_init()
+        elif user_input is not None:
+            user_input = {
+                key: value for key, value in user_input.items() if key != "import_entry_id"
+            }
             for key in ("net_key", "app_key", "device_key"):
                 value = user_input.get(key, "").strip()
                 user_input[key] = value
@@ -68,7 +124,12 @@ class OptionsFlow(config_entries.OptionsFlow):
                 if not user_input.get("net_key") or not user_input.get("app_key"):
                     errors["base"] = "keys_required"
                 source = user_input.get("source_address", 0)
-                if not 1 <= source <= 0x7FFF or source == user_input.get("node_address"):
+                if (
+                    not 1 <= source <= 0x7FFF
+                    or source == user_input.get("node_address")
+                    or source == self._previous_source
+                    or source == old.get("imported_source_address")
+                ):
                     errors["source_address"] = "invalid_source"
                 if (
                     source != old.get("source_address")
@@ -95,6 +156,9 @@ class OptionsFlow(config_entries.OptionsFlow):
 
         schema = vol.Schema(
             {
+                vol.Optional("import_entry_id", default=""): vol.In(
+                    {"": "—", **{entry.entry_id: entry.title for entry in candidates}}
+                ),
                 vol.Required(
                     "transport_mode", default=old.get("transport_mode", "observe")
                 ): vol.In(["observe", "query_only", "vendor_dp", "sig"]),
@@ -120,7 +184,16 @@ class OptionsFlow(config_entries.OptionsFlow):
                 ),
             }
         )
-        return self.async_show_form(step_id="init", data_schema=cast(Any, schema), errors=errors)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=cast(Any, schema),
+            errors=errors,
+            description_placeholders={
+                "previous_source": str(
+                    self._previous_source or old.get("imported_source_address") or "—"
+                )
+            },
+        )
 
     async def async_step_profile(self, user_input=None):
         old = self._mesh or dict(self.config_entry.options)

@@ -1,0 +1,129 @@
+{
+  "services": [
+    {
+      "uuid": "00001800-0000-1000-8000-00805f9b34fb",
+      "characteristics": [
+        {
+          "uuid": "00002a00-0000-1000-8000-00805f9b34fb",
+          "properties": [
+            "read",
+            "notify"
+          ]
+        },
+        {
+          "uuid": "00002a01-0000-1000-8000-00805f9b34fb",
+          "properties": [
+            "read"
+          ]
+        },
+        {
+          "uuid": "00002a04-0000-1000-8000-00805f9b34fb",
+          "properties": [
+            "read"
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "0000180a-0000-1000-8000-00805f9b34fb",
+      "characteristics": [
+        {
+          "uuid": "00002a50-0000-1000-8000-00805f9b34fb",
+          "properties": [
+            "read"
+          ]
+        },
+        {
+          "uuid": "00002a26-0000-1000-8000-00805f9b34fb",
+          "properties": [
+            "read"
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "00010203-0405-0607-0809-0a0b0c0d1912",
+      "characteristics": [
+        {
+          "uuid": "00010203-0405-0607-0809-0a0b0c0d2b12",
+          "properties": [
+            "read",
+            "write-without-response"
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "00007fdd-0000-1000-8000-00805f9b34fb",
+      "characteristics": [
+        {
+          "uuid": "00002adc-0000-1000-8000-00805f9b34fb",
+          "properties": [
+            "notify"
+          ]
+        },
+        {
+          "uuid": "00002adb-0000-1000-8000-00805f9b34fb",
+          "properties": [
+            "write-without-response"
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "00001828-0000-1000-8000-00805f9b34fb",
+      "characteristics": [
+        {
+          "uuid": "00002ade-0000-1000-8000-00805f9b34fb",
+          "properties": [
+            "notify"
+          ]
+        },
+        {
+          "uuid": "00002add-0000-1000-8000-00805f9b34fb",
+          "properties": [
+            "write-without-response"
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "00010203-0405-0607-0809-0a0b0c0d7fde",
+      "characteristics": [
+        {
+          "uuid": "00010203-0405-0607-0809-0a0b0c0d7fdf",
+          "properties": [
+            "read",
+            "write-without-response",
+            "notify",
+            "indicate"
+          ]
+        }
+      ]
+    },
+    {
+      "uuid": "00001801-0000-1000-8000-00805f9b34fb",
+      "characteristics": [
+        {
+          "uuid": "00002a05-0000-1000-8000-00805f9b34fb",
+          "properties": [
+            "indicate"
+          ]
+        }
+      ]
+    }
+  ],
+  "beacon_format": {
+    "length": 22,
+    "type": 1,
+    "flags": 0,
+    "iv_index": 0
+  },
+  "capture_states": [
+    "proxy_notifications_started",
+    "complete",
+    "proxy_notifications_started",
+    "complete"
+  ],
+  "dp_reports_received": false
+}
