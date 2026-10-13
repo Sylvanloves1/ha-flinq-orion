@@ -1,0 +1,88 @@
+{
+  "title": "FlinQ Orion",
+  "config": {
+    "step": {
+      "user": {
+        "title": "FlinQ Orion",
+        "description": "Voeg de lamp toe zonder reset. Configureer bestaande meshkeys en de experimentele protocolvariant daarna via Opties. Zonder keys blijft de integratie in observatiemodus.",
+        "data": {
+          "address": "Bluetoothadres"
+        }
+      }
+    },
+    "error": {
+      "invalid_address": "Ongeldig Bluetoothadres"
+    },
+    "abort": {
+      "already_configured": "Dit apparaat is al geconfigureerd",
+      "not_orion": "Dit is niet de opgegeven Orion-lamp"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Bestaand meshnetwerk",
+        "description": "Kies observe voor passieve diagnostiek, query_only voor lezen, vendor_dp voor experimentele Tuya-DP-bediening of sig voor SIG-lichtmodellen. Gebruik uitsluitend bestaande keys en een eigen vrij unicast-controlleradres (decimale invoer). Bevestig dat dit adres nooit door Smart Life of een andere controller is gebruikt. Keys worden lokaal in HA-configuratieopslag bewaard, niet extra versleuteld; bescherm back-ups.",
+        "data": {
+          "net_key": "NetKey (32 hextekens)",
+          "app_key": "AppKey (32 hextekens)",
+          "iv_index": "Huidige IV Index",
+          "availability_timeout": "Beschikbaarheidstime-out (seconden)",
+          "transport_mode": "Protocolvariant",
+          "device_key": "DeviceKey (optioneel, 32 hextekens)",
+          "source_address": "Eigen vrij controlleradres (decimaal)",
+          "node_address": "Primair lampadres (176 = 0x00B0)",
+          "new_source_confirmed": "Ik bevestig dat het controlleradres uniek en nooit eerder gebruikt is"
+        }
+      },
+      "profile": {
+        "title": "Bevestigde lichtmetadata",
+        "description": "Laat onbekende instellingen uitgeschakeld. CT vereist bewezen eindpunten én een lineaire mapping in Kelvin. HSV moet het 12-hextekenformaat gebruiken. Scenereplay verstuurt alleen eerder ontvangen DP6-waarden. Moduscodes moeten door reports zijn waargenomen en qua betekenis bevestigd zijn; -1 betekent niet automatisch wisselen. Countdown vereist bewezen seconden en maximum.",
+        "data": {
+          "hsv_encoding_confirmed": "DP5 gebruikt bevestigd HSV met 12 hextekens",
+          "ct_range_confirmed": "Lineaire Kelvin-mapping en CT-eindpunten zijn bevestigd",
+          "min_kelvin": "Minimum Kelvin (0 indien onbekend)",
+          "max_kelvin": "Maximum Kelvin (0 indien onbekend)",
+          "scene_replay_confirmed": "Replay van ontvangen scenes inschakelen (experimenteel)",
+          "white_mode_value": "Bevestigde witmoduscode (-1 indien onbekend)",
+          "color_mode_value": "Bevestigde kleurmoduscode (-1 indien onbekend)",
+          "scene_mode_value": "Bevestigde scenemoduscode (-1 indien onbekend)",
+          "countdown_seconds_confirmed": "DP7 is bevestigd als countdown in seconden",
+          "countdown_max_seconds": "Bevestigd countdownmaximum in seconden"
+        }
+      }
+    },
+    "error": {
+      "invalid_key": "Voer een niet-nulle 128-bits hexadecimale sleutel in",
+      "both_keys": "Voer beide sleutels in of laat beide leeg",
+      "keys_required": "Bestaande NetKey en AppKey zijn vereist",
+      "invalid_source": "Kies een geldig eigen unicastadres buiten de lamp",
+      "source_in_use": "Dit controlleradres is al in gebruik binnen HA",
+      "confirm_unique_source": "Bevestig dat dit controlleradres nog nooit gebruikt is",
+      "invalid_ct_range": "Vul de bewezen Kelvin-eindpunten in",
+      "invalid_countdown_range": "Vul het bewezen countdownmaximum in"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "rssi": {
+        "name": "Signaalsterkte"
+      }
+    },
+    "number": {
+      "countdown": {
+        "name": "Countdown"
+      }
+    },
+    "select": {
+      "operating_mode": {
+        "name": "Bedrijfsmoduscode"
+      }
+    },
+    "button": {
+      "query_status": {
+        "name": "Status en mogelijkheden ophalen"
+      }
+    }
+  }
+}

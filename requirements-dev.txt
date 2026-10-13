@@ -1,0 +1,9 @@
+homeassistant==2026.10.1
+pytest==9.1.1
+pytest-asyncio==1.4.0
+ruff==0.17.0
+mypy==2.4.0
+bleak-retry-connector==4.7.1
+aiousbwatcher==1.1.2
+serialx==1.11.0
+aiohasupervisor==0.7.0

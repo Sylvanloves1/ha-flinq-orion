@@ -1,0 +1,88 @@
+{
+  "title": "FlinQ Orion",
+  "config": {
+    "step": {
+      "user": {
+        "title": "FlinQ Orion",
+        "description": "Add the lamp without resetting it. Configure existing mesh keys and an experimental protocol in Options. Without keys the integration remains in observation mode.",
+        "data": {
+          "address": "Bluetooth address"
+        }
+      }
+    },
+    "error": {
+      "invalid_address": "Invalid Bluetooth address"
+    },
+    "abort": {
+      "already_configured": "Already configured",
+      "not_orion": "Not the target Orion lamp"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Existing mesh network",
+        "description": "Choose observe for passive diagnostics, query_only for reads, vendor_dp for experimental Tuya DP control or sig for SIG light models. Use existing keys and a dedicated unused unicast controller address (decimal input). Confirm this address has never been used by Smart Life or another controller. Keys are stored locally in HA config entry storage, without additional encryption; protect backups.",
+        "data": {
+          "net_key": "NetKey (32 hex characters)",
+          "app_key": "AppKey (32 hex characters)",
+          "iv_index": "Current IV Index",
+          "availability_timeout": "Availability timeout (seconds)",
+          "transport_mode": "Protocol mode",
+          "device_key": "DeviceKey (optional, 32 hex characters)",
+          "source_address": "Dedicated unused controller address (decimal)",
+          "node_address": "Primary lamp address (176 = 0x00B0)",
+          "new_source_confirmed": "I confirm the controller address is unique and has never previously been used"
+        }
+      },
+      "profile": {
+        "title": "Confirmed light metadata",
+        "description": "Leave unknown settings disabled. CT requires proven endpoints AND a linear Kelvin mapping. HSV must use the 12-hex-character format. Scene replay sends only previously received DP6 values. Mode codes must have been observed in reports and their meaning confirmed; -1 disables automatic mode selection. Countdown requires confirmed seconds and maximum.",
+        "data": {
+          "hsv_encoding_confirmed": "DP5 is confirmed as 12-hex HSV",
+          "ct_range_confirmed": "Linear Kelvin mapping and CT endpoints are confirmed",
+          "min_kelvin": "Minimum Kelvin (0 if unknown)",
+          "max_kelvin": "Maximum Kelvin (0 if unknown)",
+          "scene_replay_confirmed": "Enable captured scene replay (experimental)",
+          "white_mode_value": "Confirmed white mode code (-1 if unknown)",
+          "color_mode_value": "Confirmed color mode code (-1 if unknown)",
+          "scene_mode_value": "Confirmed scene mode code (-1 if unknown)",
+          "countdown_seconds_confirmed": "DP7 is confirmed as countdown in seconds",
+          "countdown_max_seconds": "Confirmed countdown maximum in seconds"
+        }
+      }
+    },
+    "error": {
+      "invalid_key": "Enter a nonzero 128-bit hexadecimal key",
+      "both_keys": "Provide both keys or neither",
+      "keys_required": "Existing NetKey and AppKey required",
+      "invalid_source": "Choose a valid dedicated unicast address distinct from the lamp",
+      "source_in_use": "This controller address is already in use in HA",
+      "confirm_unique_source": "Confirm the controller address has never been used",
+      "invalid_ct_range": "Enter the proven Kelvin endpoints",
+      "invalid_countdown_range": "Enter the proven countdown maximum"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "rssi": {
+        "name": "Signal strength"
+      }
+    },
+    "number": {
+      "countdown": {
+        "name": "Countdown"
+      }
+    },
+    "select": {
+      "operating_mode": {
+        "name": "Operating mode code"
+      }
+    },
+    "button": {
+      "query_status": {
+        "name": "Query status and capabilities"
+      }
+    }
+  }
+}

@@ -1,0 +1,70 @@
+capture:
+  name: Capture Bluetooth diagnostics
+  description: Inspect GATT and receive notifications. An active mesh session also configures its proxy filter; no DP writes or provisioning occur.
+  fields:
+    entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: flinq_orion
+    seconds:
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 60
+          unit_of_measurement: s
+query_status:
+  name: Discover capabilities and query status
+  description: Read composition (with DeviceKey), Tuya DPs and SIG light status according to the selected protocol. Unsupported requests time out without stopping discovery.
+  fields:
+    entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: flinq_orion
+query_dp:
+  name: Query a data point
+  description: Read one Tuya data point without changing its value.
+  fields:
+    entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: flinq_orion
+    dp_id:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 255
+          mode: box
+dump_capabilities:
+  name: Return discovered capabilities
+  description: Return observed models, decoded data points and captured scene/mode values. Does not contact the lamp.
+  fields:
+    entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: flinq_orion
+bind_vendor_model:
+  name: Advanced — bind existing AppKey to Tuya vendor model
+  description: Explicit configuration write, requiring the existing DeviceKey and AppKey index. Adds a model binding; never resets or provisions the lamp.
+  fields:
+    entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: flinq_orion
+    app_key_index:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 4095
+          mode: box
+    confirm:
+      required: true
+      selector:
+        boolean:
