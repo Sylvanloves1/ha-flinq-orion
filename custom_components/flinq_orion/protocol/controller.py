@@ -14,6 +14,9 @@ from .errors import MeshError, MeshTimeoutError
 REJECT_LIST = 0x01
 # Group addresses are 0xC000–0xFFFF (unicast up to 0x7FFF, virtual 0x8000–0xBFFF).
 GROUP_ADDRESS_START = 0xC000
+# The Orion answered the first query of a link after 1.7 s (captures 0 and 1). On
+# 2026-10-14 the first read of both refreshes timed out at 2 s and the later reads answered.
+FIRST_REQUEST_TIMEOUT = 5
 
 
 @dataclass(frozen=True)
@@ -63,6 +66,7 @@ class MeshController:
         self.destination = node
         self.allowed_sources = {node} if node is not None else set()
         self.device_command = False
+        self.requested = False
 
     def _device_key_for(self, address):
         if isinstance(self.device_key, dict):
@@ -172,7 +176,7 @@ class MeshController:
                     "src": self.source,
                     "dst": self.destination,
                     "opcode": decode_access(payload).opcode,
-                    "device_key": device,
+                    "uses_device_key": device,
                     "segments": len(parts),
                 }
             )
@@ -220,6 +224,9 @@ class MeshController:
                 raise MeshError("Commands require a distinct valid unicast destination")
             self.allowed_sources.add(self.destination)
             self.device_command = device
+            if not self.requested:
+                self.requested = True
+                timeout = max(timeout, FIRST_REQUEST_TIMEOUT)
             try:
                 return await self.channel.request(
                     payload, matcher, timeout=timeout, retries=retries, idempotent=bool(retries)

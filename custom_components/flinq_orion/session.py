@@ -114,6 +114,9 @@ class MeshSession:
             or lamp.device.mode == "observe"
             or (task and not task.done())
             or time.monotonic() < self.next_attempt.get(lamp.address, 0.0)
+            # After a restart HA can list the lamp before the ESPHome proxy is registered
+            # ("0 scanner(s) registered"); the next advertisement tries again.
+            or not bluetooth.async_scanner_count(self.hass, connectable=True)
         ):
             return
         if self.on_demand:
@@ -327,9 +330,11 @@ class MeshSession:
                 self.hass, target.address, connectable=True
             )
             if device is None:
-                raise DeviceUnavailableError(
+                error = DeviceUnavailableError(
                     "No connectable HA Bluetooth source can reach the lamp"
                 )
+                self.record({**self.connection_error(error), "lamp": target.title})
+                raise error
             if self.client:
                 await self._close_link()
             await self._open_link(target, device)
@@ -349,13 +354,17 @@ class MeshSession:
                     disconnected_callback=self._disconnected,
                     max_attempts=1 if self.on_demand else MAX_CONNECT_ATTEMPTS,
                 )
-        except FlinqOrionError:
+        except FlinqOrionError as err:
+            self.record({**self.connection_error(err), "lamp": target.title})
             raise
         except Exception as err:
-            raise DeviceUnavailableError(
+            error = DeviceUnavailableError(
                 "Lamp not reachable over Bluetooth; it may be out of range or its battery "
                 "may be low"
-            ) from err
+            )
+            error.__cause__ = err
+            self.record({**self.connection_error(error), "lamp": target.title})
+            raise error from err
         if self.closed:
             await client.disconnect()
             raise DeviceUnavailableError("Integration unloaded while connecting")

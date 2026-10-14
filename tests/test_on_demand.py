@@ -151,3 +151,22 @@ def test_existing_entries_default_to_on_demand():
     coordinator = Coordinator()
     coordinator.data = {"available": True, "connected": False, "responsive": False}
     assert OrionEntity(coordinator, "power").available is True
+
+
+@pytest.mark.asyncio
+async def test_no_start_up_attempt_before_a_scanner_is_registered(tmp_path, bluetooth_scanner):
+    c, s = await started_session(tmp_path)
+    connector = AsyncMock(return_value=Client(Peer()))
+    device_patch, connect_patch = patched_connection(connector)
+    try:
+        with device_patch, connect_patch:
+            bluetooth_scanner.return_value = 0
+            s.schedule_connect(c)
+            assert c.address not in s.tasks
+            bluetooth_scanner.return_value = 1
+            s.schedule_connect(c)
+            await s.tasks[c.address]
+        assert connector.await_count == 1 and c.address in s.last_refresh
+    finally:
+        await s.stop()
+        await c.stop()

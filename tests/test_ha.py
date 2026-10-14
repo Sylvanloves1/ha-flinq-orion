@@ -465,6 +465,7 @@ async def test_diagnostics_redacts_keys(tmp_path):
     )
 
     c = diagnostics_coordinator(source="private-proxy-address")
+    c.records = [{"kind": "tx_access", "uses_device_key": True}]
     entry = SimpleNamespace(
         runtime_data=RuntimeData({"lamp": Lamp(c, Mock())}),
         options={"net_key": "secret-netkey", "app_key": "secret-appkey", "iv_index": 0},
@@ -478,6 +479,7 @@ async def test_diagnostics_redacts_keys(tmp_path):
     lamp = result["lamps"][0]
     assert lamp["name"] == "Garden" and lamp["node_address"] == 176
     assert lamp["connection_history"][0]["link_lifetime_s"] == 3.1
+    assert lamp["packets"][0]["uses_device_key"] is True
     device = SimpleNamespace(identifiers={(DOMAIN, ADDRESS)})
     result = await async_get_device_diagnostics(None, entry, device)
     assert result["lamp"]["name"] == "Garden" and "secret-netkey" not in str(result)

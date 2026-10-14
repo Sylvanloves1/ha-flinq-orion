@@ -384,3 +384,21 @@ one entity. Remove it: a smaller device page; the DP schema stays in the code.
 **Recommendation.** Keep.
 
 **Decision.** Keep, confirmed by Sylvan Loves. Status: settled; closes the open point of D-013.
+
+## D-019 Small fixes after the first run of 0.4.0b1 (2026-10-14)
+
+**Context.** The device diagnostics of the first 0.4.0b1 run (docs/protocol.md, "First run of
+0.4.0b1") showed four points: a failed connection for a command leaves no record, the first
+start-up attempt runs before a Bluetooth proxy is registered, the first read after a link setup
+timed out at 2 s in both refreshes, and the `device_key` flag of sent messages is redacted
+because it has the name of the key option.
+
+**Options.**
+- Now as 0.4.0b2. Gives: the next tests (second lamp, provisioning) also show failed
+  connections. Costs: one more installation.
+- With 0.5. Costs: the diagnostics gap stays during the provisioning tests.
+- Only the two diagnostics fixes. Gives: no behaviour change based on one observation.
+
+**Recommendation.** Now as 0.4.0b2.
+
+**Decision.** Now as 0.4.0b2, chosen by Sylvan Loves. Status: settled.

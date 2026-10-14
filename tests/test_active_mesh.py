@@ -300,8 +300,19 @@ async def test_reply_to_another_controller_updates_state_but_does_not_answer_us(
     peer, controller, device, allocator, replay = await make_system()
     peer.report_destination = 0x0005
     peer.acknowledge_requester = False
+    controller.requested = True  # not the first request of the link: keep the short timeout
     with pytest.raises(MeshTimeoutError):
         await controller.request(query((0,)), lambda response: True, timeout=0.3)
     await peer.finish()
     assert device.dp(1)["value"] is False  # read from the reply to 0x0005
     assert peer.acks == []
+
+
+@pytest.mark.asyncio
+async def test_first_request_of_a_link_waits_longer():
+    peer, controller, device, allocator, replay = await make_system()
+    controller.channel.request = AsyncMock(return_value="response")
+    await controller.request(b"\x82\x01", lambda response: True, timeout=2)
+    await controller.request(b"\x82\x01", lambda response: True, timeout=2)
+    timeouts = [call.kwargs["timeout"] for call in controller.channel.request.await_args_list]
+    assert timeouts == [5, 2]

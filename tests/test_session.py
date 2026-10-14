@@ -266,3 +266,29 @@ def test_connection_error_preserves_nested_cause_and_redacts_keys_and_addresses(
     assert result["causes"][1]["message"].startswith("Timeout waiting for connection slot")
     assert NET.hex() not in str(result)
     assert "DC:23:4F:6E:A0:12" not in str(result)
+
+
+@pytest.mark.asyncio
+async def test_failed_connection_for_a_command_is_recorded(tmp_path):
+    c, s = await started_session(tmp_path)
+    device_patch, connect_patch = patched_connection(
+        AsyncMock(side_effect=ConnectionError("offline"))
+    )
+    try:
+        with device_patch, connect_patch:
+            with pytest.raises(DeviceUnavailableError):
+                await c.device.query()
+        failed = [r for r in s.log.connection_history if r["kind"] == "connection_error"]
+        assert len(failed) == 1
+        assert failed[0]["error"] == "DeviceUnavailableError"
+        assert failed[0]["causes"][1]["error"] == "ConnectionError"
+        with patch(
+            "custom_components.flinq_orion.session.bluetooth.async_ble_device_from_address",
+            return_value=None,
+        ):
+            with pytest.raises(DeviceUnavailableError, match="No connectable"):
+                await s.ensure_connection(c)
+        assert s.log.connection_history[-1]["kind"] == "connection_error"
+    finally:
+        await s.stop()
+        await c.stop()
