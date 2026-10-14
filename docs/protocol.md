@@ -609,3 +609,23 @@ Mesh and FlinQ Orion, in October, on an outdoor solar lamp. No manufacturer sour
 low-battery mode was found. Test: full USB-C charge, then a passive monitor, then
 `probe_link` with only FlinQ Orion enabled. The user started USB-C charging at about
 17:31 local; the 15:31:14 sighting and the silence until 15:33:54 do not show a change yet.
+
+## While charging over USB-C (2026-10-14, 15:35–15:44 UTC)
+
+Same Mac, same position, same method, no Home Assistant integration active.
+
+| Measurement | Before charging (14:31–15:34) | While charging (15:35–15:44) |
+|---|---|---|
+| Advertising | 1 of 48 and 4 of 90 windows of 10 s | 25 of 30 windows |
+| Proxy identity | Node Identity, new random every ~181 s | Network ID `cd4830e47e41576f` (as in the working 0.2.1 sessions) |
+| Mac connection | 0 of 6 attempts connected | Connected in 3.0 s, kept for 181 s, 18 of 18 reads OK (about 50 ms) |
+
+The Network ID equals the value recorded in the working morning sessions. The firmware
+revision characteristic returns `\x00\x005151\x00\x00\x00`. No 0x2ADE notification arrived
+on the Mac link in 181 s; the cause is unknown and does not affect the link result.
+
+Conclusion (one observation each): with external power the lamp left the 181 s cycle,
+advertised its Network ID and kept a link from an Apple central for the full test. This
+strongly supports H4 (battery or power state) as the cause of the failures since about
+09:25 UTC. It does not yet show that the Home Assistant path works; the next step is
+`probe_link` with only FlinQ Orion enabled.
