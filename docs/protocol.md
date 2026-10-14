@@ -536,3 +536,39 @@ attempt before the lamp reappeared was at 14:41:50, so the lamp stayed silent fo
 Not established: whether the lamp is silent because it is in a fault state (for example a
 reset or recovery loop), or because another central outside Home Assistant connects to
 it when it advertises. A Telink peripheral does not advertise while it is connected.
+
+## Passive monitor 2: a 181 s cycle (2026-10-14, 15:03–15:18 UTC)
+
+Conditions as before: no Home Assistant integration active for the lamp, no connection
+attempts. 90 scan windows of 10 s.
+
+| Seen (UTC) | Interval | RSSI | Connectable | Node Identity random |
+|---|---|---|---|---|
+| 15:05:51 | | -43 | yes | new |
+| 15:09:01 | 190 s | -43 | yes | new |
+| 15:12:02 | 181 s | -42 | yes | new |
+| 15:15:03 | 181 s | -52 | yes | new |
+
+The lamp advertised in one 10 s window per cycle and was silent in between. The same
+period appears in earlier data: Node Identity random changes about every 181 s in capture
+13, and ESP32 links opened at 13:40:51, 13:43:53 and 13:46:56 (182 s and 183 s apart).
+
+### Interpretation (inference)
+
+In the Telink reference SDK of the 2020–2022 period, the Node Identity random is created
+only at boot (`mesh_init_all` calls `prov_random_proc`). It is refreshed at run time only
+in builds with private beacons (`MD_PRIVACY_BEA`, a Mesh 1.1 feature). If the lamp firmware
+follows the reference, a new random every 181 s means a new boot every 181 s.
+
+A boot loop explains the observations together:
+- links that stop 2–4 s after they open, independent of the central and of the cache;
+- long periods without advertising and without accepted connections;
+- Node Identity instead of Network ID: the 60 s Node Identity timer
+  (`mesh_switch_identity_proc`) needs the main loop to run for 60 s;
+- the provisioning GATT table seen once at 12:15.
+
+Not established: that the lamp reboots (no physical or serial evidence), why it started
+between 09:04 and 09:25 UTC, and whether any message from the FlinQ Orion or Bluetooth
+Mesh integration caused it. The lamp SEQ values do not fit a +0x80 saved step per boot,
+so the firmware does not persist SEQ like the reference at every boot, or it does not
+reboot. Both remain possible.

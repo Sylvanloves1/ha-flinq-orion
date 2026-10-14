@@ -132,3 +132,21 @@ question in that case.
 **Decision.** B, chosen by Sylvan Loves. Status: settled. The central is a read-only
 script (`tools/control_link_test.py`) instead of a GUI app, so that every event has a UTC
 time for correlation with PacketLogger.
+
+## D-007 Response to a probable lamp-side fault (2026-10-14)
+
+**Context.** With no Home Assistant integration active and no connection attempts, the lamp
+advertised for under 10 s every 181 s, with a new Node Identity random each time. A Mac got
+no link in three clean attempts. See [protocol.md](protocol.md), "Passive monitor 2".
+
+**Considerations.** The integration and the ESP32 are not needed for the failure. A boot
+loop is the most consistent explanation, but it is an inference. A factory reset changes
+the NetKey, AppKey and DeviceKey and needs new onboarding.
+
+**Options.** Observe one power cycle physically and passively; leave the lamp unpowered for
+longer before a cold start; factory reset and re-onboard; contact the seller or FlinQ.
+
+**Recommendation.** First the physical observation of one power cycle, because it can
+confirm or reject the boot loop without changing the lamp.
+
+**Decision.** Open, awaiting Sylvan Loves.
