@@ -70,7 +70,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 if call.service == "capture":
                     await (data.session or data.inspector).capture(call.data["seconds"])
                 elif call.service == "query_status":
-                    return await device.discover()
+                    return await device.discover(include_optional=call.data["include_optional"])
                 elif call.service == "query_dp":
                     await device.query((call.data["dp_id"],))
                 elif call.service == "dump_capabilities":
@@ -113,6 +113,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             elif service == "dump_capabilities":
                 response = SupportsResponse.ONLY
             elif service == "query_status":
+                fields[vol.Optional("include_optional", default=False)] = bool
                 response = SupportsResponse.OPTIONAL
             hass.services.async_register(
                 DOMAIN,

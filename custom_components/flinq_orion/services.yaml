@@ -16,13 +16,19 @@ capture:
           unit_of_measurement: s
 query_status:
   name: Discover capabilities and query status
-  description: Read composition (with DeviceKey), Tuya DPs and SIG light status according to the selected protocol. Unsupported requests time out without stopping discovery.
+  description: Read status for the selected protocol. Optional protocol discovery can disconnect this firmware; enable it only for a controlled experiment.
   fields:
     entry_id:
       required: true
       selector:
         config_entry:
           integration: flinq_orion
+    include_optional:
+      name: Include experimental protocol discovery
+      description: Also query composition and the unconfirmed temperature range. May interrupt the connection.
+      default: false
+      selector:
+        boolean:
 query_dp:
   name: Query a data point
   description: Read one Tuya data point without changing its value.

@@ -178,3 +178,21 @@ yet established. SIG startup now excludes experimental vendor queries, obtains
 standard light status first, and puts optional range/composition discovery last.
 Explicit vendor queries remain available for controlled experiments. This change
 requires physical verification; it does not alter cryptographic state or provision.
+
+## Automatic startup read boundary (0.2.6)
+
+Captures 7 and 8 show the same session: power, lightness, CTL temperature and HSL
+status each respond within roughly 0.1 seconds. Temperature Range Get then times
+out, composition is attempted and the connection drops. This disproves attributing
+all disconnects to the vendor query. Automatic SIG discovery now sends only those
+four responding GETs. Range/composition requests are available solely through
+`flinq_orion.query_status` with explicit `include_optional: true`. The normal query
+button remains limited to the startup reads. This isolates optional queries; it
+does not establish their causal role or guarantee physical connection stability.
+
+Update to 0.2.6, restart HA, and power-cycle the lamp once to reproduce its
+connectable advertisement window. Leave it untouched for 60 seconds, then try
+power on/off. Download diagnostics after the attempt, including if it succeeds.
+If disconnection persists without optional traffic, investigate the ESPHome
+connection reason and the lamp's proxy advertising behavior. Cached RSSI reflects
+received advertisements, not proof of a working GATT connection.

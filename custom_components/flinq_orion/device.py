@@ -269,7 +269,7 @@ class OrionDevice:
         )
         return response
 
-    async def discover(self):
+    async def discover(self, *, include_optional=False):
         if self.mode == "observe":
             raise MeshError("Discovery queries require configured existing mesh")
 
@@ -300,13 +300,16 @@ class OrionDevice:
                         "hsl",
                         lambda: request(bytes.fromhex("826d"), 0x8278, retries=1, model=0x1307),
                     ),
-                    (
-                        "temperature_range",
-                        lambda: request(bytes.fromhex("8262"), 0x8263, retries=1, model=0x1303),
-                    ),
                 ]
             )
-        if self.options.get("device_key"):
+        if include_optional and self.mode == "sig":
+            requests.append(
+                (
+                    "temperature_range",
+                    lambda: request(bytes.fromhex("8262"), 0x8263, model=0x1303),
+                )
+            )
+        if include_optional and self.options.get("device_key"):
             requests.append(
                 (
                     "composition",

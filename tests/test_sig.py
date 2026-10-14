@@ -55,7 +55,10 @@ async def test_sig_temperature_range_and_set_opcodes():
 
 
 @pytest.mark.asyncio
-async def test_discovery_bounds_unsupported_reads_without_marking_device_unresponsive():
+@pytest.mark.parametrize("include_optional", [False, True])
+async def test_discovery_bounds_unsupported_reads_without_marking_device_unresponsive(
+    include_optional,
+):
     from custom_components.flinq_orion.protocol.errors import MeshTimeoutError
 
     c = SimpleNamespace(
@@ -69,8 +72,10 @@ async def test_discovery_bounds_unsupported_reads_without_marking_device_unrespo
     d.ensure_connection = AsyncMock()
     request = AsyncMock(side_effect=MeshTimeoutError("Unsupported optional query"))
     d.controller = SimpleNamespace(node=176, request=request)
-    results = await d.discover()
-    assert len(results) == 6
+    results = await d.discover(include_optional=include_optional)
+    assert len(results) == (6 if include_optional else 4)
+    assert ("temperature_range" in results) == include_optional
+    assert ("composition" in results) == include_optional
     assert "vendor_status" not in results
     assert list(results)[:3] == ["power", "brightness", "temperature"]
     assert all(call.args[0][:2] != bytes.fromhex("ccd0") for call in request.await_args_list)
