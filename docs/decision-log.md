@@ -291,3 +291,31 @@ users can get the keys is not known yet.
 
 **Decision.** Network entry with lamp subentries, plus key research, chosen by Sylvan Loves.
 Status: settled. Design details: D-015 after review of the plan.
+
+## D-015 Design of the network and lamp model (2026-10-14)
+
+**Context.** Implementation of D-014 in 0.4.0b1. Three questions were asked; the plan was
+approved by Sylvan Loves.
+
+| Detail | Options | Recommended | Decision |
+|---|---|---|---|
+| Finding new lamps | notification and manual, manual only | notification and manual | notification and manual |
+| Links for several lamps | one link per lamp, one link with forwarding | one link per lamp | one link with forwarding |
+| Plan | build, adjust first | build | build |
+
+Design consequences, recorded for review (status open):
+
+- One GATT link per network. A message for another lamp goes through the connected lamp
+  as proxy. For lamps within radio range of each other this is the standard proxy function
+  (GATT to advertising bearer and back); relay is needed only for more hops. Relay is not
+  proven on these lamps.
+- Fallback: when a lamp does not answer through the current link, the network connects to
+  that lamp directly and repeats the request once. This was added during design.
+- The controller identity (source address, sequence store, replay store) is per network and
+  keeps its current store names, so the existing installation keeps address 2 and its
+  sequence state.
+- The mesh address of a lamp is taken from the source of the Proxy Filter Status when the
+  lamp is the proxy.
+
+**Decision.** As above, chosen by Sylvan Loves. Status: settled for the three questions;
+open for the design consequences.
