@@ -185,3 +185,24 @@ persistent link was stable for more than 8 minutes, with 0.16–4.4 s response t
 
 **Decision.** Connect per command, chosen by Sylvan Loves. Status: settled. Details of
 idle time, refresh and failure behaviour: D-010.
+
+## D-010 Details of on-demand connections (2026-10-14)
+
+**Context.** Follows D-009. Without a link most of the time, entity availability can no
+longer require a connected link; that change is not a choice. Four details were open.
+
+**Considerations.** Automations often send several commands within seconds. A new link
+costs 1–4 s. The lamp does not report its own changes to Home Assistant. With a low
+battery the lamp is reachable for a few seconds every ~180 s.
+
+**Options and decisions** (all chosen by Sylvan Loves, status settled):
+
+| Detail | Options | Recommended | Decision |
+|---|---|---|---|
+| Idle time before disconnect | 30 s, 60 s, 5 min | 60 s | 60 s |
+| Status refresh | on command and at start, every 30 min, every hour | on command and at start | every 30 min |
+| Unreachable at a command | error after ~20 s, wait up to ~3.5 min | error after ~20 s | error after ~20 s |
+| Mode configurable | option with on-demand default, on-demand only | option | option, default on-demand |
+
+The 30 minute refresh costs one link per refresh (48 per day) and fails while the battery
+is low; this cost was accepted for a more current state.
