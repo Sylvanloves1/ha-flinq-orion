@@ -74,3 +74,17 @@ bind_vendor_model:
       required: true
       selector:
         boolean:
+
+test_connection_parameters:
+  name: Experimental Bluetooth link timeout test
+  description: Request 40 ms interval and 8 seconds supervision timeout once. Verify accepted values in proxy logs. This is not a proven fix.
+  fields:
+    entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: flinq_orion
+    confirm:
+      required: true
+      selector:
+        boolean:

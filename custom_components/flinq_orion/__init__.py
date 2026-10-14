@@ -12,7 +12,14 @@ from .bluetooth import Inspector
 from .session import MeshSession
 
 PLATFORMS = ["sensor", "light", "number", "select", "button"]
-SERVICES = ("capture", "query_status", "query_dp", "dump_capabilities", "bind_vendor_model")
+SERVICES = (
+    "capture",
+    "query_status",
+    "query_dp",
+    "dump_capabilities",
+    "bind_vendor_model",
+    "test_connection_parameters",
+)
 
 
 @dataclass
@@ -71,6 +78,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     await (data.session or data.inspector).capture(call.data["seconds"])
                 elif call.service == "query_status":
                     return await device.discover(include_optional=call.data["include_optional"])
+                elif call.service == "test_connection_parameters":
+                    if call.data["confirm"] is not True or data.session is None:
+                        raise HomeAssistantError("Explicit confirmation and mesh session required")
+                    async with device.operation_lock:
+                        return await data.session.test_connection_parameters()
                 elif call.service == "query_dp":
                     await device.query((call.data["dp_id"],))
                 elif call.service == "dump_capabilities":
@@ -103,6 +115,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 fields[vol.Optional("seconds", default=20)] = vol.All(
                     vol.Coerce(int), vol.Range(min=5, max=60)
                 )
+            elif service == "test_connection_parameters":
+                fields[vol.Required("confirm")] = bool
+                response = SupportsResponse.OPTIONAL
             elif service == "query_dp":
                 fields[vol.Required("dp_id")] = vol.All(vol.Coerce(int), vol.Range(min=1, max=255))
             elif service == "bind_vendor_model":

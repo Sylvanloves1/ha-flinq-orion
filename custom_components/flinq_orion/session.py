@@ -35,6 +35,8 @@ class MeshSession:
         self.next_attempt = 0.0
         self.failures = 0
         self.setup_stage = "idle"
+        self.link_test_pending = False
+        self.link_test_lock = asyncio.Lock()
         self.key_scope = hashlib.sha256(bytes.fromhex(self.entry.options["net_key"])).hexdigest()[
             :24
         ]
@@ -108,6 +110,45 @@ class MeshSession:
             "stage": getattr(self, "setup_stage", "unknown"),
             "causes": causes,
         }
+
+    async def request_test_parameters(self, client):
+        """One opt-in request; proxy GAP logs establish actual accepted values."""
+        setter = getattr(client, "set_connection_params", None)
+        if setter is None:
+            raise MeshError("Bluetooth backend has no connection-parameter API")
+        self.coordinator.record(
+            {
+                "kind": "link_parameter_experiment",
+                "status": "requested",
+                "interval_ms": 40,
+                "latency": 0,
+                "timeout_ms": 8000,
+            }
+        )
+        await setter(min_interval=32, max_interval=32, latency=0, timeout=800)
+        self.link_test_pending = False
+        self.coordinator.record(
+            {
+                "kind": "link_parameter_experiment",
+                "status": "api_returned",
+                "accepted": "verify_in_proxy_gap_log",
+            }
+        )
+
+    async def test_connection_parameters(self):
+        """Apply once to this connection; never store a preference or change mesh state."""
+        async with self.link_test_lock:
+            self.link_test_pending = True
+            try:
+                if self.connected:
+                    await self.request_test_parameters(self.client)
+                else:
+                    await self.ensure_connection()
+                    if self.link_test_pending:
+                        await self.request_test_parameters(self.client)
+                return await self.coordinator.device.discover()
+            finally:
+                self.link_test_pending = False
 
     async def _background_connect(self):
         try:
@@ -224,6 +265,12 @@ class MeshSession:
                     self.coordinator.record,
                 )
                 self.controller = controller
+                if self.link_test_pending:
+                    self.setup_stage = "experimental_connection_parameters"
+                    # Prior capture shows a second update about 0.9 s after discovery.
+                    # This bounded delay permits that update before the test request.
+                    await asyncio.sleep(1.25)
+                    await self.request_test_parameters(client)
                 self.setup_stage = "subscribe_proxy_notifications"
                 self.coordinator.record({"kind": "connection_setup", "stage": self.setup_stage})
                 await client.start_notify(PROXY_OUT, notification)

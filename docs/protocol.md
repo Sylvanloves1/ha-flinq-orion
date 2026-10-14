@@ -213,3 +213,88 @@ and [retry connector source](https://github.com/Bluetooth-Devices/bleak-retry-co
 Install 0.2.7, restart HA and power-cycle the lamp once. Wait one minute and try
 on/off. Capture FlinQ diagnostics and simultaneous ESPHome logs to establish
 whether service discovery, notification subscription or proxy filter setup fails.
+
+## Correlated capture 12 / proxy log 3 (2026-10-14)
+
+At 12:52:19 local time the proxy opens an uncached connection, discovers services
+and reports MTU 250 and a medium connection-parameter update. HA enters notification
+subscription at 10:52:19 UTC. Mesh Proxy Data Out 0x2ADE has handle 28; its CCCD
+0x2902 has handle 30. At 12:52:40 the proxy reports an error writing descriptor
+0x1E (30), status 133, immediately followed by disconnect reason 0x08 (connection
+timeout). No mesh access or proxy filter message was transmitted. Fresh discovery
+did not resolve the failure; the CCCD handle is consistent with the discovered table.
+
+This establishes failure during GATT notification subscription, not a mesh key,
+sequence or DP response failure. It does not distinguish radio coexistence,
+connection-parameter incompatibility, proxy/stack behavior or peripheral behavior.
+Earlier vendor/range-query correlations are insufficient evidence of causation.
+Do not promote 0.2.7 as a physically validated stable release. Inspect the actual
+ESPHome YAML before changing radio or connection parameters. No additional code
+release was made from this capture.
+
+Reference: [ESP-IDF HCI error definitions](https://github.com/espressif/esp-idf/blob/master/components/bt/host/bluedroid/stack/include/stack/hcidefs.h)
+define HCI_ERR_CONNECTION_TOUT as 0x08.
+
+## Correlated capture 14 / proxy log 5
+
+After the WiFi power-save experiment and manual status action, at 13:18:19 local
+time the uncached proxy connection opens (MTU 250, medium connection parameters).
+Notification subscription and authenticated proxy filtering succeed. Four standard
+SIG GETs all receive authenticated replies by 13:18:20.800. At 13:18:22.951 the
+proxy reports DISCONNECT_EVT reason 0x08 without a preceding local Disconnecting
+request. No optional range/composition/vendor query is transmitted in this session.
+
+This establishes a link timeout even after successful startup and disproves
+optional queries as a necessary cause. It does not identify which endpoint,
+connection-parameter negotiation or radio conditions cause the timeout. Do not
+claim that WiFi power-save adjustment, cache refresh or query removal resolved it.
+Next physical isolation: keep software/settings fixed, temporarily place the
+proxy 1–2 metres from the lamp with unobstructed placement, and reproduce one
+manual status connection with concurrent logs. Strong advertisement RSSI alone
+does not demonstrate sustained bidirectional link reliability.
+
+## Connection parameter source audit (ESPHome 2026.9.1)
+
+Source audit confirms uncached Bluedroid setup requests FAST min/max 6 units
+(7.5 ms), latency 0, supervision timeout 1000 units (10 s). Discovery completion
+calls an update to MEDIUM min 7/max 9 (8.75–11.25 ms), latency 0, timeout 800 (8 s).
+These are requested parameters, not measured negotiated values. A disconnect
+roughly 3.1 s after open cannot by itself be attributed to the requested 8 s timer.
+
+`esp32_ble/ble.cpp` handles `ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT`: failed updates
+are WARN; successful updates are VERBOSE under tag `esp32_ble` with actual interval,
+latency and timeout. Previous DEBUG captures omit successful negotiated values.
+Use existing firmware logging instrumentation before introducing an interval override.
+The HA client exposes `set_connection_params`; the ESPHome backend requests the
+update through the API, and unsupported firmware may only warn and return. A
+completed API call alone therefore must not be treated as proof of negotiation.
+No automatic parameter override or published integration change was made.
+
+Sources (version pinned where applicable):
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/ble_device_base/ble_client_state.h
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/bluetooth_connection/bluetooth_connection_bluedroid.cpp
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/esp32_ble/ble.cpp
+- https://github.com/Bluetooth-Devices/bleak-esphome/blob/main/src/bleak_esphome/backend/client.py
+
+Next capture: compile logger at VERBOSE, initial runtime DEBUG, override only
+esp32_ble to VERBOSE. Keep radio, mesh and integration settings fixed. Power-cycle
+the lamp once with live logs, invoke normal status button once advertisements
+return, capture two minutes and inspect `Conn params updated`/`Conn param update
+failed` together with the connection-open and disconnect timestamps.
+
+## Negotiated values from proxy log 7
+
+At 13:47:51.819 the successful GAP update reports interval 9 (11.25 ms),
+latency 0, supervision timeout 800 (8 s). At 13:47:52.737 another successful
+update reports interval 32 (40 ms), latency 0, timeout 200 (2 s). Disconnect
+reason 0x08 follows at 13:47:55.206, 2.469 seconds after the second update.
+The shorter negotiated timer is now observed, not inferred from defaults. The
+log does not identify which endpoint initiated the second update; attributing
+it to the lamp is a hypothesis. The timing supports a parameter/link interaction
+but does not prove that increasing supervision timeout restores reliable traffic.
+
+A next isolated experiment may preserve the observed 40 ms interval and latency
+0 while requesting timeout 800 (8 s) through the supported HA BLE client API.
+Verify the accepted GAP values, not merely API completion, and sustained on/off
+responses over at least 60 seconds. Longer availability alone is insufficient:
+the link may simply time out later. No automatic override is enabled in 0.2.7.
