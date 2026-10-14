@@ -152,3 +152,18 @@ connection keeps reachability available, while command failures can still mark
 the device unresponsive. A disconnected silent device expires normally. No polling
 was added. This is a confirmed code defect; fresh diagnostics are required to
 establish whether it explains the user's unavailable lamp after the update.
+
+## Connection failure investigation (0.2.4)
+
+HA Bluetooth diagnostics show the sole ESPHome scanner `bluetooth-proxy-buiten`
+with 3 slots, 3 free, no allocations or in-progress connections, and four failed
+connections to the Orion. The lamp was received at -41 dBm. The retry library's
+`BleakOutOfConnectionSlotsError` therefore does not establish that other devices
+occupy slots. Its underlying exception message was lost in integration diagnostics.
+Version 0.2.4 records up to four bounded exception causes and disconnection events,
+with configured keys and Bluetooth addresses redacted. No mesh keys, controller
+addresses, provisioning or sequence stores are changed during this investigation.
+
+Install 0.2.4 and restart HA. Wait five minutes for a connection attempt and download
+FlinQ Orion diagnostics. Inspect `connection_error.causes` to distinguish API slot
+waiting, controller errors, and missing-device errors before changing proxy settings.

@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import time
+import re
 from homeassistant.components import bluetooth
 from .storage import DurableStore
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
@@ -86,19 +87,36 @@ class MeshSession:
             and self.coordinator.data.get("connected", False)
         )
 
+    def connection_error(self, err):
+        """Keep bounded failure causes, stripping credentials and Bluetooth addresses."""
+        causes: list[dict[str, str]] = []
+        seen = set()
+        while err is not None and id(err) not in seen and len(causes) < 4:
+            seen.add(id(err))
+            message = str(err)
+            for key in ("net_key", "app_key", "device_key"):
+                secret = self.entry.options.get(key)
+                if secret:
+                    message = re.sub(re.escape(secret), "**REDACTED**", message, flags=re.I)
+            message = re.sub(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", "**REDACTED**", message)
+            causes.append({"error": type(err).__name__, "message": message[:1000]})
+            err = err.__cause__ or err.__context__
+        return {"kind": "connection_error", "error": causes[0]["error"], "causes": causes}
+
     async def _background_connect(self):
         try:
             await self.ensure_connection()
             # Read-only discovery. No bind or DP writes happen on startup/reconnect.
             await self.coordinator.device.discover()
         except Exception as err:
-            self.coordinator.record({"kind": "connection_error", "error": type(err).__name__})
+            self.coordinator.record(self.connection_error(err))
             self.failures += 1
             self.next_attempt = time.monotonic() + min(300, 15 * (2 ** min(self.failures, 5)))
 
     def _disconnected(self, client):
         if client is not self.client:
             return
+        self.coordinator.record({"kind": "disconnected", "generation": self.connection_generation})
         self.connection_generation += 1
         if self.controller:
             self.controller.close()

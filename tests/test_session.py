@@ -148,3 +148,18 @@ async def test_missing_sequence_store_after_initialization_blocks_restart(tmp_pa
     with pytest.raises(MeshError):
         await restarted.initialize()
     await restarted.stop()
+
+
+def test_connection_error_preserves_nested_cause_and_redacts_keys_and_addresses():
+    from bleak_retry_connector import BleakOutOfConnectionSlotsError
+
+    session = object.__new__(MeshSession)
+    session.entry = SimpleNamespace(options={"net_key": NET.hex()})
+    cause = TimeoutError("Timeout waiting for connection slot on DC:23:4F:6E:A0:12")
+    error = BleakOutOfConnectionSlotsError(f"Failed on DC:23:4F:6E:A0:12 {NET.hex()}")
+    error.__cause__ = cause
+    result = session.connection_error(error)
+    assert result["error"] == "BleakOutOfConnectionSlotsError"
+    assert result["causes"][1]["message"].startswith("Timeout waiting for connection slot")
+    assert NET.hex() not in str(result)
+    assert "DC:23:4F:6E:A0:12" not in str(result)
