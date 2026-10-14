@@ -70,7 +70,10 @@ async def test_discovery_bounds_unsupported_reads_without_marking_device_unrespo
     request = AsyncMock(side_effect=MeshTimeoutError("Unsupported optional query"))
     d.controller = SimpleNamespace(node=176, request=request)
     results = await d.discover()
-    assert len(results) == 7
+    assert len(results) == 6
+    assert "vendor_status" not in results
+    assert list(results)[:3] == ["power", "brightness", "temperature"]
+    assert all(call.args[0][:2] != bytes.fromhex("ccd0") for call in request.await_args_list)
     for call in request.await_args_list:
         assert call.kwargs["timeout"] == 2
         assert call.kwargs["retries"] == 0

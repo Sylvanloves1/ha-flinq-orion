@@ -279,14 +279,8 @@ class OrionDevice:
 
         results = {}
         requests: list[tuple[str, Callable[[], Awaitable[Any]]]] = []
-        if self.options.get("device_key"):
-            requests.append(
-                (
-                    "composition",
-                    lambda: request(bytes.fromhex("800800"), 2, device=True, retries=1),
-                )
-            )
-        requests.append(("vendor_status", lambda: self.query(discovery=True)))
+        if self.mode != "sig":
+            requests.append(("vendor_status", lambda: self.query(discovery=True)))
         if self.mode == "sig":
             requests.extend(
                 [
@@ -299,10 +293,6 @@ class OrionDevice:
                         lambda: request(bytes.fromhex("824b"), 0x824E, retries=1, model=0x1300),
                     ),
                     (
-                        "temperature_range",
-                        lambda: request(bytes.fromhex("8262"), 0x8263, retries=1, model=0x1303),
-                    ),
-                    (
                         "temperature",
                         lambda: request(bytes.fromhex("8261"), 0x8266, retries=1, model=0x1306),
                     ),
@@ -310,7 +300,18 @@ class OrionDevice:
                         "hsl",
                         lambda: request(bytes.fromhex("826d"), 0x8278, retries=1, model=0x1307),
                     ),
+                    (
+                        "temperature_range",
+                        lambda: request(bytes.fromhex("8262"), 0x8263, retries=1, model=0x1303),
+                    ),
                 ]
+            )
+        if self.options.get("device_key"):
+            requests.append(
+                (
+                    "composition",
+                    lambda: request(bytes.fromhex("800800"), 2, device=True, retries=1),
+                )
             )
         for name, perform_request in requests:
             try:

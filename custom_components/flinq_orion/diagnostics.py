@@ -18,7 +18,7 @@ REDACT = {
 async def async_get_config_entry_diagnostics(hass, entry):
     c = entry.runtime_data.coordinator
     result = {
-        "version": "0.2.4",
+        "version": "0.2.5",
         "stage": getattr(getattr(c, "device", None), "mode", "observe"),
         "model": "FQC8274",
         "pid": "1ajecbtl",

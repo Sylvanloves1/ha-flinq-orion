@@ -167,3 +167,14 @@ addresses, provisioning or sequence stores are changed during this investigation
 Install 0.2.4 and restart HA. Wait five minutes for a connection attempt and download
 FlinQ Orion diagnostics. Inspect `connection_error.causes` to distinguish API slot
 waiting, controller errors, and missing-device errors before changing proxy settings.
+
+## SIG startup isolation (0.2.5)
+
+Capture 6 establishes a successful proxy filter and authenticated composition
+response, followed by vendor query opcode 0xCC, no vendor reply, a Generic OnOff
+Get two seconds later and GATT disconnect approximately 0.45 seconds after that.
+Earlier captures also show vendor queries near disconnections. Causation is not
+yet established. SIG startup now excludes experimental vendor queries, obtains
+standard light status first, and puts optional range/composition discovery last.
+Explicit vendor queries remain available for controlled experiments. This change
+requires physical verification; it does not alter cryptographic state or provision.
