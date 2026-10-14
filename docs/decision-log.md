@@ -425,3 +425,18 @@ provisioning (D-017) exists.
 
 **Decision.** As in the Decision column, chosen by Sylvan Loves. Status: settled. Provisioning
 (D-017) moves from 0.5 to a 1.x minor release.
+
+## D-021 README icon, repository description and release commit (2026-10-14)
+
+**Context.** After the merge of pull request #1 the user asked to remove the icon from the
+README and to provide a description and topics for the repository.
+
+| Question | Options | Recommended | Decision |
+|---|---|---|---|
+| Description and topics | set by Claude with `gh`; set by the user | set by Claude | set by Claude: an English description and 18 topics; `wip` removed |
+| README change | push and pull request; keep local | push and pull request | push and pull request #2, merged by the user |
+| Commit for tag v1.0.0 | after the README pull request; now on 79531b1; no release yet | after the README pull request | after the README pull request |
+
+The integration icon in `custom_components/flinq_orion/brand/` stays (D-020).
+
+**Decision.** As in the Decision column, chosen by Sylvan Loves. Status: settled.
