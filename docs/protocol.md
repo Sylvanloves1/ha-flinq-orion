@@ -572,3 +572,40 @@ between 09:04 and 09:25 UTC, and whether any message from the FlinQ Orion or Blu
 Mesh integration caused it. The lamp SEQ values do not fit a +0x80 saved step per boot,
 so the firmware does not persist SEQ like the reference at every boot, or it does not
 reboot. Both remain possible.
+
+## Observed power cycle and power source (2026-10-14, 15:21–15:34 UTC)
+
+The lamp is a solar lamp with a battery. Retail information gives a 3.7 V / 2200 mAh
+Li-ion battery, charged by the solar panel or USB-C in 2–3 hours, and advises USB-C
+charging when the lamp gets little sun (ANWB and MediaMarkt product pages). The Tuya
+status (2026-10-06 and 10-11) has `device_mode: auto` and `cds: 2000lux`, and no battery
+data point. In auto mode the light stays off in daylight, so "no light at power-on" is
+expected and is not a symptom.
+
+User actions (local time, minute resolution): off about 17:21, on 17:22, off 17:24,
+on 17:25. Physical observation: no light, no flicker; the green indicator on the back is
+on whenever the lamp is switched on.
+
+| Seen (UTC) | Interval |
+|---|---|
+| 15:22:12 | first window after the 17:22 power-on |
+| 15:25:13 | 181 s |
+| 15:28:13 | 180 s |
+| 15:31:14 | 181 s |
+
+Before the power cycle the cycle ran at 15:15:03 + n × 181 s, so the next sighting would
+have been near 15:21:05. The 15:22:12 sighting follows the power-on instead. The first
+power cycle therefore moved the phase: the cycle is a timer that starts at boot. The
+second power cycle (17:24–17:25) fell in phase by coincidence or within the minute
+resolution, so it adds no evidence.
+
+### Working hypothesis H4: low battery
+
+A depleted battery that puts the lamp into a duty-cycled low-power mode (wake about every
+180 s, advertise briefly, sleep) explains the cycle, the new random per wake (a Telink
+deep-sleep wake runs `mesh_init_all` again), the Node Identity advertising and the short
+links. The failures began after hours of connection attempts by `tuya_ble_mesh`, Bluetooth
+Mesh and FlinQ Orion, in October, on an outdoor solar lamp. No manufacturer source for a
+low-battery mode was found. Test: full USB-C charge, then a passive monitor, then
+`probe_link` with only FlinQ Orion enabled. The user started USB-C charging at about
+17:31 local; the 15:31:14 sighting and the silence until 15:33:54 do not show a change yet.
