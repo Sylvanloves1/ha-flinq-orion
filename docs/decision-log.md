@@ -150,3 +150,8 @@ longer before a cold start; factory reset and re-onboard; contact the seller or 
 confirm or reject the boot loop without changing the lamp.
 
 **Decision.** Open, awaiting Sylvan Loves.
+
+## D-008 Observe one power cycle (2026-10-14)
+
+Settles D-007. **Decision:** observe one power cycle physically, with a passive Mac monitor,
+before any reset. Chosen by Sylvan Loves. Status: settled.
