@@ -88,7 +88,10 @@ async def test_active_gatt_connect_reports_and_reconnect(tmp_path):
     await s.initialize()
     peer = Peer()
     client = Client(peer)
-    connector = AsyncMock(side_effect=[ConnectionError("offline"), client])
+    bad_client = Client(peer)
+    bad_client.start_notify = AsyncMock(side_effect=MeshError("notification setup failed"))
+    bad_client.clear_cache = AsyncMock(return_value=True)
+    connector = AsyncMock(side_effect=[ConnectionError("offline"), bad_client, client])
     with (
         patch(
             "custom_components.flinq_orion.session.bluetooth.async_ble_device_from_address",
@@ -99,8 +102,19 @@ async def test_active_gatt_connect_reports_and_reconnect(tmp_path):
         try:
             with pytest.raises(ConnectionError):
                 await s.ensure_connection()
+            with pytest.raises(MeshError, match="notification setup failed"):
+                await s.ensure_connection()
+            bad_client.clear_cache.assert_awaited_once()
+            assert not bad_client.is_connected
+            assert not s.connected
+            assert any(
+                record.get("stage") == "subscribe_proxy_notifications"
+                and record["kind"] == "connection_error"
+                for record in c.records
+            )
             await s.ensure_connection()
             assert s.connected
+            assert connector.call_args.kwargs["use_services_cache"] is False
             await c.device.query()
             assert c.device.supports_power
             await c.device.set_power(True)

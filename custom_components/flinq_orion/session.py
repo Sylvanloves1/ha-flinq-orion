@@ -34,6 +34,7 @@ class MeshSession:
         self.connection_generation = 0
         self.next_attempt = 0.0
         self.failures = 0
+        self.setup_stage = "idle"
         self.key_scope = hashlib.sha256(bytes.fromhex(self.entry.options["net_key"])).hexdigest()[
             :24
         ]
@@ -101,7 +102,12 @@ class MeshSession:
             message = re.sub(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", "**REDACTED**", message)
             causes.append({"error": type(err).__name__, "message": message[:1000]})
             err = err.__cause__ or err.__context__
-        return {"kind": "connection_error", "error": causes[0]["error"], "causes": causes}
+        return {
+            "kind": "connection_error",
+            "error": causes[0]["error"],
+            "stage": getattr(self, "setup_stage", "unknown"),
+            "causes": causes,
+        }
 
     async def _background_connect(self):
         try:
@@ -146,11 +152,13 @@ class MeshSession:
                 old = self.client
                 self.client = None
                 await old.disconnect()
+            self.setup_stage = "connect_and_discover_services"
             client = await establish_connection(
                 BleakClientWithServiceCache,
                 device,
                 "FlinQ Orion",
                 disconnected_callback=self._disconnected,
+                use_services_cache=False,
             )
             if self.closed:
                 await client.disconnect()
@@ -175,7 +183,15 @@ class MeshSession:
                     {
                         "uuid": service.uuid,
                         "characteristics": [
-                            {"uuid": c.uuid, "properties": c.properties}
+                            {
+                                "uuid": c.uuid,
+                                "handle": getattr(c, "handle", None),
+                                "properties": c.properties,
+                                "descriptors": [
+                                    {"uuid": d.uuid, "handle": d.handle}
+                                    for d in getattr(c, "descriptors", [])
+                                ],
+                            }
                             for c in service.characteristics
                         ],
                     }
@@ -208,13 +224,31 @@ class MeshSession:
                     self.coordinator.record,
                 )
                 self.controller = controller
+                self.setup_stage = "subscribe_proxy_notifications"
+                self.coordinator.record({"kind": "connection_setup", "stage": self.setup_stage})
                 await client.start_notify(PROXY_OUT, notification)
+                self.setup_stage = "configure_proxy_filter"
+                self.coordinator.record({"kind": "connection_setup", "stage": self.setup_stage})
                 await controller.configure_filter()
                 self.coordinator.device.controller = controller
                 self.coordinator.data.update(connected=True, error=None)
                 self.coordinator.async_set_updated_data(dict(self.coordinator.data))
                 self.failures = 0
-            except BaseException:
+                self.setup_stage = "ready"
+            except BaseException as err:
+                self.coordinator.record(self.connection_error(err))
+                if isinstance(err, Exception) and (
+                    clear_cache := getattr(client, "clear_cache", None)
+                ):
+                    try:
+                        cleared = await clear_cache()
+                        self.coordinator.record(
+                            {"kind": "gatt_cache_clear", "cleared": bool(cleared)}
+                        )
+                    except Exception as cache_err:
+                        self.coordinator.record(
+                            {"kind": "gatt_cache_clear", "error": type(cache_err).__name__}
+                        )
                 if self.controller:
                     self.controller.close()
                 self.controller = None

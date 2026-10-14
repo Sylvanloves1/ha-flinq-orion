@@ -196,3 +196,20 @@ power on/off. Download diagnostics after the attempt, including if it succeeds.
 If disconnection persists without optional traffic, investigate the ESPHome
 connection reason and the lamp's proxy advertising behavior. Cached RSSI reflects
 received advertisements, not proof of a working GATT connection.
+
+## Proxy log and service cache (0.2.7)
+
+The ESPHome log reports `Connecting v3 with cache`, connection open, then a local
+`Disconnecting` call approximately 5.1 seconds later and DISCONNECT_EVT reason
+0x16. It does not establish that the lamp initiated the disconnect. A stale GATT
+cache is a candidate explanation for the earlier handle-30 GATT error, not proven.
+Connections now request service discovery with `use_services_cache=False`. Failed
+GATT setup clears the selected client's service cache through the supported
+BleakClientWithServiceCache API before disconnecting. It never clears mesh state.
+Diagnostics now include setup stage and characteristic/descriptor handles.
+See [bleak-esphome cache documentation](https://bleak-esphome.readthedocs.io/en/latest/usage.html)
+and [retry connector source](https://github.com/Bluetooth-Devices/bleak-retry-connector).
+
+Install 0.2.7, restart HA and power-cycle the lamp once. Wait one minute and try
+on/off. Capture FlinQ diagnostics and simultaneous ESPHome logs to establish
+whether service discovery, notification subscription or proxy filter setup fails.
