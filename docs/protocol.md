@@ -469,3 +469,30 @@ H1 remains: since about 09:25 the lamp loses links, most visibly at its own para
 update, independent of the integration. Unknown: whether the lamp alone causes this, or
 the interaction between this lamp and the ESP32 controller. A connection from a different
 central (an iPhone, without keys and without mesh writes) separates these two.
+
+## Control link test from a Mac, attempt 1 (2026-10-14, 14:08–14:26 UTC)
+
+Central: MacBook (Apple BCM_4388 controller, macOS 26.6.2), `tools/control_link_test.py`.
+PacketLogger and the macOS Bluetooth profile were not installed, so link parameters are
+not visible. The user confirmed that "Orion 2" in old Smart Life data is the same lamp,
+so the only Mesh Proxy candidate is this lamp.
+
+| Time (UTC) | Observation |
+|---|---|
+| 14:08:23 | Seen, RSSI -65, Node Identity (scan only, no connection) |
+| 14:12:45–14:17:04 | Not seen in any scan window |
+| 14:17:34 | Seen, RSSI -43, new Node Identity random. Connect attempt: no connection in 20 s |
+| 14:18:24–14:19:55 | Not seen |
+| 14:20:25 | Seen, RSSI -46, new random. Connect attempt: no connection in 20 s |
+| 14:21:15–14:23:16 | Not seen |
+| 14:23:46 | Seen, RSSI -55, new random. Connect attempt: no connection in 20 s |
+| 14:24:36–14:26:07 | Not seen |
+
+Facts: the lamp advertised only in short windows, about every 171–201 s, each time with a
+new Node Identity random. Three of three connect attempts from the Mac did not establish a
+link. This matches the roughly 181 s random changes in capture 13.
+
+Not established: whether the FlinQ Orion integration (or another Home Assistant
+integration) made the ESPHome proxy connect first in those windows. If it did, the Mac
+attempts lost a race and say nothing about the lamp. If it did not, the lamp also refuses
+or drops connections from an Apple central, which points to the lamp (H1).
