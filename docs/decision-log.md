@@ -265,3 +265,29 @@ music mode and old options rows of D-012):
   (on is Empty), as a binary sensor with translated states.
 - Remove the retired entities from the entity registry at setup.
 - Keep the DP schema and the write path in the code.
+
+## D-014 More lamps and other users (2026-10-14)
+
+**Context.** The user asked whether extra lamps can be added easily and whether other users
+can pair their FlinQ Orion. The code binds to one lamp: the MAC address is hard-coded in
+discovery, the mesh address defaults to 0x00B0, keys come only from a `tuya_ble_mesh` import
+or manual entry, and every lamp needs its own entry with a hand-picked controller address.
+
+**Considerations.** Home Assistant 2026.10 supports config subentries. The proxy filter
+status that a lamp sends on every link has the lamp's own unicast address as source (176
+in captures 14 and 17), so the address can be detected with only the NetKey. How other
+users can get the keys is not known yet.
+
+**Options.**
+- Network entry with lamp subentries, plus key research. Gives: keys once, lamps added
+  from a list, address detected, one controller identity per mesh. Costs: largest rebuild
+  and a migration of the existing installation.
+- Network entry with lamp subentries only. Costs: other users still cannot get keys.
+- Clean-up only (no hard-coded MAC, detected address). Costs: every lamp still needs keys
+  and a controller address by hand.
+- Key research first. Costs: no code progress yet.
+
+**Recommendation.** Network entry with lamp subentries, plus key research.
+
+**Decision.** Network entry with lamp subentries, plus key research, chosen by Sylvan Loves.
+Status: settled. Design details: D-015 after review of the plan.
