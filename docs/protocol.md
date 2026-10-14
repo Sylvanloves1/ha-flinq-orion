@@ -143,3 +143,12 @@ reports on; an explicit power-on action still sends a command.
 Update to 0.2.2 and restart HA, keeping the existing entry, keys, controller address
 and sequence storage. Change brightness/color after startup and compare response
 time. Re-pairing or deleting sequence storage is unnecessary and unsafe.
+
+## Idle availability correction (0.2.3)
+
+A live GATT session no longer expires solely because the node has sent no access
+status for five minutes. Mesh nodes need not send periodic reports. An established
+connection keeps reachability available, while command failures can still mark
+the device unresponsive. A disconnected silent device expires normally. No polling
+was added. This is a confirmed code defect; fresh diagnostics are required to
+establish whether it explains the user's unavailable lamp after the update.

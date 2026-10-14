@@ -106,7 +106,8 @@ class OrionCoordinator(DataUpdateCoordinator):
 
     @callback
     def expire(self, now):
-        available = time.monotonic() - self.last_monotonic < self.entry.options.get(
+        connected = bool(self.session and self.session.connected)
+        available = connected or time.monotonic() - self.last_monotonic < self.entry.options.get(
             "availability_timeout", 300
         )
         if available != self.data["available"]:
@@ -115,6 +116,7 @@ class OrionCoordinator(DataUpdateCoordinator):
 
         if (
             self.session
+            and not connected
             and self.last_response_monotonic
             and time.monotonic() - self.last_response_monotonic
             >= self.entry.options.get("availability_timeout", 300)
