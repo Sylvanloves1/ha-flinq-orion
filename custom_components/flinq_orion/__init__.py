@@ -11,7 +11,7 @@ from .coordinator import OrionCoordinator
 from .bluetooth import Inspector
 from .session import MeshSession
 
-PLATFORMS = ["sensor", "light", "number", "select", "button"]
+PLATFORMS = ["sensor", "binary_sensor", "light", "number", "select", "switch", "button"]
 SERVICES = (
     "capture",
     "query_status",

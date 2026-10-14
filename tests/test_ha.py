@@ -44,7 +44,8 @@ async def test_entity_creation_availability(tmp_path):
     c = Mock()
     c.address = TARGET_ADDRESS
     c.data = {"rssi": -38, "available": True}
-    entry = SimpleNamespace(runtime_data=SimpleNamespace(coordinator=c))
+    c.device.supports_settings = False  # observe mode: only the RSSI sensor
+    entry = SimpleNamespace(runtime_data=SimpleNamespace(coordinator=c), async_on_unload=Mock())
     added = []
     await async_setup_entry(HomeAssistant(str(tmp_path)), entry, added.extend)
     assert len(added) == 1

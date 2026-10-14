@@ -227,3 +227,22 @@ they probably go to another destination that the proxy filter drops.
 **Decision.** All from the schema, including writes, chosen by Sylvan Loves. Also: a derived
 "battery probably low" sensor, and 0.3.0b1 is released together with this work. Status:
 settled.
+
+## D-012 Design details for the schema functions (2026-10-14)
+
+**Context.** Implementation of D-011. These details were chosen during the build and are
+recorded for review.
+
+| Detail | Choice | Reason | Alternative |
+|---|---|---|---|
+| Proxy filter | Reject list with no entries (accept every destination), per link | The lamp publishes DP reports to another address (2 of 2 captures) | Add guessed group addresses; fails if the guess is wrong |
+| Foreign destinations | Read and use as lamp state; acknowledge only messages to us; only replies to us or to a group complete a request | Group reports carry the state; a reply to another controller is not our answer | Drop them (no reports) |
+| Transport | SIG for power, brightness and colour; Tuya DPs for settings, white mode and colour temperature | SIG is proven to answer; settings exist only as DPs | Everything over DPs |
+| Colour temperature | DP 4 with 2000–6500 K, linear, unless SIG range or confirmed endpoints exist | The lamp never answered CTL Range Get; HA's Tuya integration used 2000–6500 K for this lamp | SIG CTL with an unknown scale |
+| Music mode | Not offered | Needs audio data from a phone app | Offer and leave it inactive |
+| DP 52 pir_state | Enum sensor, not a motion sensor | "pir"/"none" meaning is not confirmed | Motion binary sensor |
+| Battery warning | On after 3 Node Identity randoms within 15 min without a Network ID; off on a Network ID | Matches all observations of 2026-10-14 | No warning |
+| Old options | Mode codes and countdown confirmation removed | Superseded by the schema | Keep unused options |
+| SIG discovery | Adds one vendor DP query, timeout 5 s | 0.2.5 removed it on a suspicion that the battery result disproved | Leave it out (no settings) |
+
+**Decision.** Implemented in 0.3.0b1. Status: open, awaiting review by Sylvan Loves.

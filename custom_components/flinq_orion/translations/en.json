@@ -39,18 +39,13 @@
       },
       "profile": {
         "title": "Confirmed light metadata",
-        "description": "Leave unknown settings disabled. CT requires proven endpoints AND a linear Kelvin mapping. HSV must use the 12-hex-character format. Scene replay sends only previously received DP6 values. Mode codes must have been observed in reports and their meaning confirmed; -1 disables automatic mode selection. Countdown requires confirmed seconds and maximum.",
+        "description": "Leave unknown settings disabled. Without confirmed endpoints, colour temperature uses 2000–6500 K, the range Home Assistant's Tuya integration used for this lamp. HSV must use the 12-hex-character format. Scene replay sends only previously received DP6 values.",
         "data": {
           "hsv_encoding_confirmed": "DP5 is confirmed as 12-hex HSV",
           "ct_range_confirmed": "Linear Kelvin mapping and CT endpoints are confirmed",
           "min_kelvin": "Minimum Kelvin (0 if unknown)",
           "max_kelvin": "Maximum Kelvin (0 if unknown)",
-          "scene_replay_confirmed": "Enable captured scene replay (experimental)",
-          "white_mode_value": "Confirmed white mode code (-1 if unknown)",
-          "color_mode_value": "Confirmed color mode code (-1 if unknown)",
-          "scene_mode_value": "Confirmed scene mode code (-1 if unknown)",
-          "countdown_seconds_confirmed": "DP7 is confirmed as countdown in seconds",
-          "countdown_max_seconds": "Confirmed countdown maximum in seconds"
+          "scene_replay_confirmed": "Enable captured scene replay (experimental)"
         }
       }
     },
@@ -62,7 +57,6 @@
       "source_in_use": "This controller address is already in use in HA",
       "confirm_unique_source": "Confirm the controller address has never been used",
       "invalid_ct_range": "Enter the proven Kelvin endpoints",
-      "invalid_countdown_range": "Enter the proven countdown maximum",
       "import_missing_keys": "Selected entry has no valid existing SIG Mesh keys",
       "import_invalid_metadata": "Mesh address or IV Index is missing or invalid in the existing entry",
       "import_wrong_device": "Select the Tuya BLE Mesh entry for the same Bluetooth lamp",
@@ -75,16 +69,72 @@
     "sensor": {
       "rssi": {
         "name": "Signal strength"
+      },
+      "pir_state": {
+        "name": "PIR state",
+        "state": {
+          "pir": "PIR",
+          "none": "None"
+        }
       }
     },
     "number": {
       "countdown": {
         "name": "Countdown"
+      },
+      "pir_delay": {
+        "name": "Light duration after motion"
+      },
+      "standby_time": {
+        "name": "Standby time"
+      },
+      "standby_bright": {
+        "name": "Standby brightness"
       }
     },
     "select": {
-      "operating_mode": {
-        "name": "Operating mode code"
+      "work_mode": {
+        "name": "Light mode",
+        "state": {
+          "white": "White",
+          "colour": "Colour",
+          "scene": "Scene"
+        }
+      },
+      "device_mode": {
+        "name": "Control mode",
+        "state": {
+          "auto": "Automatic",
+          "manual": "Manual"
+        }
+      },
+      "cds": {
+        "name": "Light sensor threshold",
+        "state": {
+          "2000lux": "2000 lux",
+          "300lux": "300 lux",
+          "50lux": "50 lux",
+          "10lux": "10 lux",
+          "5lux": "5 lux"
+        }
+      },
+      "pir_sensitivity": {
+        "name": "Motion sensitivity",
+        "state": {
+          "low": "Low",
+          "middle": "Medium",
+          "high": "High"
+        }
+      }
+    },
+    "switch": {
+      "switch_pir": {
+        "name": "Motion sensor"
+      }
+    },
+    "binary_sensor": {
+      "battery_low": {
+        "name": "Battery probably low"
       }
     },
     "button": {

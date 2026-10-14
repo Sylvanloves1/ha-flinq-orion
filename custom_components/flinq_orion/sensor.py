@@ -2,11 +2,18 @@ from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, Sen
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, NAME
-from .device_profiles import FLINQ_ORION_FQC8274_PROFILE as PROFILE
+from .device_profiles import FLINQ_ORION_FQC8274_PROFILE as PROFILE, ORION_DPS
+from .entity import OrionEntity, add_when_supported
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    async_add_entities([OrionRSSI(entry.runtime_data.coordinator)])
+    c = entry.runtime_data.coordinator
+    async_add_entities([OrionRSSI(c)])
+    add_when_supported(
+        entry,
+        async_add_entities,
+        lambda: [("pir_state", c.device.supports_settings, lambda: OrionPirState(c))],
+    )
 
 
 class OrionRSSI(CoordinatorEntity, SensorEntity):
@@ -35,3 +42,19 @@ class OrionRSSI(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data["rssi"]
+
+
+class OrionPirState(OrionEntity, SensorEntity):
+    """DP 52 as reported. The schema gives "pir" and "none"; the meaning is not confirmed,
+    so it is shown as a state, not as a motion sensor."""
+
+    _attr_translation_key = "pir_state"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = list(ORION_DPS[52].options)
+
+    def __init__(self, c):
+        super().__init__(c, "pir_state")
+
+    @property
+    def native_value(self):
+        return self.device.setting(52)

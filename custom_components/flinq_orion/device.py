@@ -9,6 +9,10 @@ from .protocol.errors import MeshError, MeshTimeoutError, TuyaDPError
 from .protocol.vendor_tuya import DP, DATA, COMPANY_ID, decode_report, query, write
 from .protocol.models import decode_composition
 from .protocol.conversions import decode_hsv_string, encode_hsv_string
+from .device_profiles import ORION_DPS, FLINQ_ORION_FQC8274_PROFILE as PROFILE
+
+# work_mode (DP 2) enum indices from the schema.
+LIGHT_MODES = {"white": 0, "color": 1, "scene": 2}
 
 
 class OrionDevice:
@@ -52,24 +56,41 @@ class OrionDevice:
         )
 
     @property
+    def supports_settings(self):
+        """Schema data points (DP 2, 7, 51–59) are read and written over the vendor model."""
+        return self.mode in ("sig", "vendor_dp")
+
+    def setting(self, identifier):
+        return ORION_DPS[identifier].decode(self.dp(identifier))
+
+    @property
+    def sig_temperature_range(self):
+        return self.state.get("temperature_range") if self.mode == "sig" else None
+
+    @property
     def temperature_range(self):
-        if self.mode == "sig":
-            return self.state.get("temperature_range")
+        if self.sig_temperature_range:
+            return self.sig_temperature_range
         lo, hi = self.options.get("min_kelvin", 0), self.options.get("max_kelvin", 0)
-        return (
-            (lo, hi) if self.options.get("ct_range_confirmed") and 800 <= lo < hi <= 20000 else None
-        )
+        if self.options.get("ct_range_confirmed") and 800 <= lo < hi <= 20000:
+            return lo, hi
+        return PROFILE.default_kelvin_range
 
     @property
     def supports_temperature(self):
-        return (
-            bool(self.temperature_range)
-            and self.supports_brightness
-            and (
-                (self.mode == "vendor_dp" and self.has_dp(4, 2))
-                or (self.mode == "sig" and "kelvin" in self.state)
-            )
+        return self.supports_brightness and (
+            self.mode == "sig" or (self.mode == "vendor_dp" and self.has_dp(4, 2))
         )
+
+    @property
+    def kelvin(self):
+        if self.sig_temperature_range:
+            return self.state.get("kelvin")
+        raw = self.setting(4)
+        if raw is None:
+            return None
+        lo, hi = self.temperature_range
+        return lo + (raw * (hi - lo) + 500) // 1000
 
     @property
     def supports_color(self):
@@ -114,9 +135,9 @@ class OrionDevice:
                 key = str(dp.id)
                 self.report_keys.add(key)
                 if dp.id == 2 and dp.type == 4:
-                    if dp.value == self.options.get("color_mode_value", -1):
+                    if dp.value == LIGHT_MODES["color"]:
                         self.state["last_color_mode"] = "hs"
-                    elif dp.value == self.options.get("white_mode_value", -1):
+                    elif dp.value == LIGHT_MODES["white"]:
                         self.state["last_color_mode"] = "temperature"
 
                 values = self.history.setdefault(key, [])
@@ -268,7 +289,8 @@ class OrionDevice:
                 or all(any(dp.id == identifier for dp in reports) for identifier in ids)
             ),
             retries=0 if discovery else 1,
-            timeout=2 if discovery else 15,
+            # The Orion answered the first query of a link after 1.7 s (captures 0 and 1).
+            timeout=5 if discovery else 15,
             discovery=discovery,
         )
         reports = decode_report(response.access.payload)
@@ -313,6 +335,9 @@ class OrionDevice:
                         "hsl",
                         lambda: request(bytes.fromhex("826d"), 0x8278, retries=1, model=0x1307),
                     ),
+                    # Settings (DP 2, 7, 51–59) only exist as Tuya data points. 0.2.5 removed
+                    # this query on a suspicion; the failures were the battery (D-011).
+                    ("vendor_status", lambda: self.query(discovery=True)),
                 ]
             )
         if include_optional and self.mode == "sig":
@@ -343,39 +368,48 @@ class OrionDevice:
         return results
 
     async def write_dp(self, dp):
-        if self.mode != "vendor_dp" or not self.has_dp(dp.id, dp.type) or dp.id not in range(1, 8):
-            raise MeshError("DP writes require an observed supported DP and vendor mode")
+        """Vendor-mode light write (DP 1, 3, 4, 5, 6) with light-specific checks."""
+        if (
+            self.mode != "vendor_dp"
+            or not self.has_dp(dp.id, dp.type)
+            or dp.id not in (1, 3, 4, 5, 6)
+        ):
+            raise MeshError("Light DP writes require vendor mode and an observed light DP")
         if dp.id == 1 and dp.type != 1:
             raise MeshError("Power must be boolean")
         if dp.id == 3 and (dp.type != 2 or not 10 <= dp.value <= 1000):
             raise MeshError("Brightness outside range")
         if dp.id == 4 and (not self.supports_temperature or not 0 <= dp.value <= 1000):
-            raise MeshError("Color temperature metadata not confirmed")
+            raise MeshError("Color temperature outside range")
         if dp.id == 5 and not self.supports_color:
             raise MeshError("Color encoding not confirmed")
         if dp.id == 6 and dp.diagnostics() not in self.scenes.values():
             raise MeshError("Only captured, explicitly enabled scenes may be replayed")
-        if dp.id == 7 and not self.countdown_range:
-            raise MeshError("Countdown units/range not confirmed")
-        if dp.id == 7 and not 0 <= dp.value <= self.countdown_range:
-            raise MeshError("Countdown outside confirmed range")
-        if dp.id == 2 and dp.diagnostics() not in self.history.get("2", []):
-            raise MeshError("Only observed modes can be selected")
+        return await self._write(dp, exact=True)
+
+    async def write_setting(self, identifier, value):
+        """Schema-validated write of a lamp setting in SIG or vendor mode (D-011)."""
+        spec = ORION_DPS.get(identifier)
+        if spec is None or not spec.writable or not self.supports_settings:
+            raise MeshError("Not a writable setting of this lamp")
+        return await self._write(spec.encode(value))
+
+    async def _write(self, *dps, exact=False):
+        """Vendor DP write; the lamp confirms with a DP report (possibly to a group address).
+
+        Settings match on the DP id, because the lamp may report a clamped value.
+        """
+        wanted = {dp.id for dp in dps}
         return await self._request(
-            write([dp]),
+            write(list(dps)),
             DATA,
             COMPANY_ID,
             model=4,
-            dp_match=lambda reports: any(report == dp for report in reports),
-        )
-
-    @property
-    def countdown_range(self):
-        maximum = self.options.get("countdown_max_seconds", 0)
-        return (
-            maximum
-            if self.options.get("countdown_seconds_confirmed") and self.has_dp(7, 2) and maximum > 0
-            else None
+            dp_match=lambda reports: (
+                all(dp in reports for dp in dps)
+                if exact
+                else wanted <= {report.id for report in reports}
+            ),
         )
 
     async def next_tid(self):
@@ -427,9 +461,15 @@ class OrionDevice:
             raise MeshError("Temperature range/report not confirmed")
         lo, hi = self.temperature_range
         kelvin = max(lo, min(hi, int(kelvin)))
+        raw = ((kelvin - lo) * 1000 + (hi - lo) // 2) // (hi - lo)
         if self.mode == "vendor_dp":
-            raw = ((kelvin - lo) * 1000 + (hi - lo) // 2) // (hi - lo)
             return await self.write_dp(DP(4, 2, raw.to_bytes(4, "big")))
+        if not self.sig_temperature_range:
+            # The lamp never answered CTL Temperature Range Get, so the SIG Kelvin scale is
+            # unknown. Use the schema data point in white mode instead (D-011).
+            return await self._write(
+                ORION_DPS[2].encode("white"), ORION_DPS[4].encode(raw), exact=True
+            )
         return await self._request(
             bytes.fromhex("8264")
             + kelvin.to_bytes(2, "little")
@@ -499,6 +539,6 @@ class OrionDevice:
         )
 
     async def select_light_mode(self, kind):
-        value = self.options.get(f"{kind}_mode_value", -1)
-        if self.mode == "vendor_dp" and value >= 0:
-            await self.write_dp(DP(2, 4, bytes((value,))))
+        # SIG mode: colour goes through HSL Set; set_temperature writes white mode with DP 4.
+        if self.mode == "vendor_dp":
+            await self.write_setting(2, ORION_DPS[2].options[LIGHT_MODES[kind]])

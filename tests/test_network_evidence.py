@@ -117,4 +117,6 @@ async def test_coordinator_without_raw_packet_reports_unknown_provisioning_state
     c.advertisement(info(None, {PROXY: b"\x00" + bytes(8)}), None)
     assert c.data["network_evidence"]["result"] == "mismatch"
     assert c.data["network_evidence"]["unprovisioned_packet"] is None
-    assert c.connection_history[-1]["kind"] == "lamp_state_warning"
+    assert [
+        r["network_evidence"] for r in c.connection_history if r["kind"] == "lamp_state_warning"
+    ] == ["mismatch"]

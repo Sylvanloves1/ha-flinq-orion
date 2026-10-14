@@ -73,14 +73,16 @@ async def test_discovery_bounds_unsupported_reads_without_marking_device_unrespo
     request = AsyncMock(side_effect=MeshTimeoutError("Unsupported optional query"))
     d.controller = SimpleNamespace(node=176, request=request)
     results = await d.discover(include_optional=include_optional)
-    assert len(results) == (6 if include_optional else 4)
+    assert len(results) == (7 if include_optional else 5)
     assert ("temperature_range" in results) == include_optional
     assert ("composition" in results) == include_optional
-    assert "vendor_status" not in results
-    assert list(results)[:3] == ["power", "brightness", "temperature"]
-    assert all(call.args[0][:2] != bytes.fromhex("ccd0") for call in request.await_args_list)
+    # Settings exist only as Tuya DPs, so SIG discovery ends its standard reads with one
+    # vendor query (D-011). Its timeout covers the 1.7 s first answer seen on the lamp.
+    assert list(results)[:5] == ["power", "brightness", "temperature", "hsl", "vendor_status"]
+    vendor = [c for c in request.await_args_list if c.args[0][:3] == bytes.fromhex("ccd007")]
+    assert len(vendor) == 1 and vendor[0].kwargs["timeout"] == 5
     for call in request.await_args_list:
-        assert call.kwargs["timeout"] == 2
+        assert call.kwargs["timeout"] == (5 if call in vendor else 2)
         assert call.kwargs["retries"] == 0
     assert c.data == {"responsive": True}
     c.async_set_updated_data.assert_not_called()

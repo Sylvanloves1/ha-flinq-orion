@@ -44,8 +44,14 @@ LIFECYCLE_KINDS = frozenset(
         "action_error",
         "refresh",
         "idle_disconnect",
+        "battery_state",
     }
 )
+
+# Low-power cycle seen on 2026-10-14: a new Node Identity random about every 180 s and no
+# Network ID; after charging the lamp advertised its Network ID again.
+LOW_POWER_WINDOW = 15 * 60
+LOW_POWER_WAKES = 3
 
 
 class OrionCoordinator(DataUpdateCoordinator):
@@ -69,7 +75,9 @@ class OrionCoordinator(DataUpdateCoordinator):
             "last_response": None,
             "network_evidence": None,
             "network_evidence_counts": {},
+            "battery_low_suspected": None,
         }
+        self.node_identity_wakes: dict[bytes, float] = {}
         self.last_monotonic = 0.0
         self.last_response_monotonic = 0.0
         self.session = None
@@ -138,9 +146,32 @@ class OrionCoordinator(DataUpdateCoordinator):
         self.record(record)
         if self.identity:
             self.check_network(info.service_data.get(PROXY), latest)
+        self.track_power_state(info.service_data.get(PROXY))
         self.async_set_updated_data(dict(self.data))
         if self.session:
             self.session.schedule_connect()
+
+    def track_power_state(self, proxy_data):
+        """Derive "battery probably low" from the advertising pattern; no keys needed."""
+        if not proxy_data:
+            return
+        now = time.monotonic()
+        if proxy_data[0] == 0:
+            self.node_identity_wakes.clear()
+            suspected = False
+        elif proxy_data[0] == 1 and len(proxy_data) == 17:
+            self.node_identity_wakes = {
+                random: seen
+                for random, seen in self.node_identity_wakes.items()
+                if now - seen < LOW_POWER_WINDOW
+            }
+            self.node_identity_wakes.setdefault(proxy_data[9:], now)
+            suspected = len(self.node_identity_wakes) >= LOW_POWER_WAKES
+        else:
+            return
+        if self.data.get("battery_low_suspected") != suspected:
+            self.data["battery_low_suspected"] = suspected
+            self.record({"kind": "battery_state", "battery_low_suspected": suspected})
 
     def check_network(self, proxy_data, latest):
         """Passive proof that the lamp still advertises this network and unicast address.

@@ -11,3 +11,5 @@ Offline tests cover documented SIG crypto vectors including Proxy Configuration 
 These tests prove implementation behavior against synthetic peers. They do not prove which protocol variant the FQC8274 firmware implements, that an AppKey is correctly bound on the lamp, physical power/brightness/color, scene completeness or PIR semantics. The README provides the one initial capture needed to resolve the bearer. After that, existing key availability and authenticated responses determine the next controlled test.
 
 Tests use published SIG sample keys and synthetic state only; there are no real device keys in the repository. Third-party HA/backoff deprecation warnings are reported separately from test failures.
+
+0.3.0b1 also adds tests for the schema settings: encoding and rejection outside the schema, entities for every setting, writes through the schema, DP reports published to a group address (read, not acknowledged), replies to another controller (state only, never an answer to our request), and the derived battery warning.

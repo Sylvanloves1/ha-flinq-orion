@@ -89,12 +89,7 @@ class OrionLight(OrionEntity, LightEntity):
 
     @property
     def color_temp_kelvin(self):
-        if not self.device.supports_temperature:
-            return None
-        if self.device.mode == "sig":
-            return self.device.state.get("kelvin")
-        lo, hi = self.device.temperature_range
-        return lo + (self.device.dp(4)["value"] * (hi - lo) + 500) // 1000
+        return self.device.kelvin if self.device.supports_temperature else None
 
     @property
     def min_color_temp_kelvin(self):

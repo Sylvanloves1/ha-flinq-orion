@@ -24,7 +24,7 @@ def test_physical_capture_has_standard_proxy_bearer():
     assert capture["dp_reports_received"] is False
 
 
-def test_physical_sig_status_values_without_assumed_kelvin_range():
+def test_physical_sig_status_values_do_not_use_the_unscaled_sig_kelvin():
     from types import SimpleNamespace
     from unittest.mock import Mock
     from custom_components.flinq_orion.device import OrionDevice
@@ -45,8 +45,12 @@ def test_physical_sig_status_values_without_assumed_kelvin_range():
     assert coordinator.device.state["kelvin"] == 8480
     assert coordinator.device.state["hsl"] == (19660, 0, 65535)
     assert coordinator.device.supports_brightness and coordinator.device.supports_color
-    assert not coordinator.device.supports_temperature
+    # The lamp never answered CTL Range Get, so 8480 K is not used. Colour temperature
+    # goes through DP 4 with the default range (D-011) and is unknown until DP 4 reports.
+    assert coordinator.device.supports_temperature
+    assert coordinator.device.temperature_range == (2000, 6500)
     light = OrionLight(coordinator)
-    assert light.supported_color_modes == {ColorMode.HS}
+    assert light.supported_color_modes == {ColorMode.HS, ColorMode.COLOR_TEMP}
+    assert light.color_temp_kelvin is None
     assert light.brightness == 153
     assert light.hs_color == (0, 100)

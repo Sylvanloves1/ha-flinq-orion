@@ -18,6 +18,16 @@ from .credential_import import (
 )
 
 
+# Replaced by the Tuya schema (DP 2 enum indices, DP 7 in seconds), see D-011.
+SUPERSEDED_OPTIONS = (
+    "white_mode_value",
+    "color_mode_value",
+    "scene_mode_value",
+    "countdown_seconds_confirmed",
+    "countdown_max_seconds",
+)
+
+
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
     _address = TARGET_ADDRESS
@@ -210,13 +220,11 @@ class OptionsFlow(config_entries.OptionsFlow):
                 <= 20000
             ):
                 errors["base"] = "invalid_ct_range"
-            if (
-                user_input.get("countdown_seconds_confirmed")
-                and user_input.get("countdown_max_seconds", 0) <= 0
-            ):
-                errors["base"] = "invalid_countdown_range"
             if not errors:
-                return self.async_create_entry(title="", data={**old, **user_input})
+                data = {**old, **user_input}
+                for superseded in SUPERSEDED_OPTIONS:
+                    data.pop(superseded, None)
+                return self.async_create_entry(title="", data=data)
 
         def optional(name, default):
             return vol.Optional(name, default=old.get(name, default))
@@ -228,15 +236,6 @@ class OptionsFlow(config_entries.OptionsFlow):
                 vol.Schema(
                     {
                         optional("hsv_encoding_confirmed", False): bool,
-                        optional("white_mode_value", -1): vol.All(
-                            vol.Coerce(int), vol.Range(min=-1, max=255)
-                        ),
-                        optional("color_mode_value", -1): vol.All(
-                            vol.Coerce(int), vol.Range(min=-1, max=255)
-                        ),
-                        optional("scene_mode_value", -1): vol.All(
-                            vol.Coerce(int), vol.Range(min=-1, max=255)
-                        ),
                         optional("ct_range_confirmed", False): bool,
                         optional("min_kelvin", 0): vol.All(
                             vol.Coerce(int), vol.Range(min=0, max=20000)
@@ -245,10 +244,6 @@ class OptionsFlow(config_entries.OptionsFlow):
                             vol.Coerce(int), vol.Range(min=0, max=20000)
                         ),
                         optional("scene_replay_confirmed", False): bool,
-                        optional("countdown_seconds_confirmed", False): bool,
-                        optional("countdown_max_seconds", 0): vol.All(
-                            vol.Coerce(int), vol.Range(min=0, max=0xFFFFFFFF)
-                        ),
                     }
                 ),
             ),

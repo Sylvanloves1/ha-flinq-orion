@@ -39,18 +39,13 @@
       },
       "profile": {
         "title": "Bevestigde lichtmetadata",
-        "description": "Laat onbekende instellingen uitgeschakeld. CT vereist bewezen eindpunten én een lineaire mapping in Kelvin. HSV moet het 12-hextekenformaat gebruiken. Scenereplay verstuurt alleen eerder ontvangen DP6-waarden. Moduscodes moeten door reports zijn waargenomen en qua betekenis bevestigd zijn; -1 betekent niet automatisch wisselen. Countdown vereist bewezen seconden en maximum.",
+        "description": "Laat onbekende instellingen uitgeschakeld. Zonder bevestigde eindpunten gebruikt kleurtemperatuur 2000–6500 K, het bereik dat de Tuya-integratie van HA voor deze lamp gebruikte. HSV moet het 12-hextekenformaat gebruiken. Scenereplay verstuurt alleen eerder ontvangen DP6-waarden.",
         "data": {
           "hsv_encoding_confirmed": "DP5 gebruikt bevestigd HSV met 12 hextekens",
           "ct_range_confirmed": "Lineaire Kelvin-mapping en CT-eindpunten zijn bevestigd",
           "min_kelvin": "Minimum Kelvin (0 indien onbekend)",
           "max_kelvin": "Maximum Kelvin (0 indien onbekend)",
-          "scene_replay_confirmed": "Replay van ontvangen scenes inschakelen (experimenteel)",
-          "white_mode_value": "Bevestigde witmoduscode (-1 indien onbekend)",
-          "color_mode_value": "Bevestigde kleurmoduscode (-1 indien onbekend)",
-          "scene_mode_value": "Bevestigde scenemoduscode (-1 indien onbekend)",
-          "countdown_seconds_confirmed": "DP7 is bevestigd als countdown in seconden",
-          "countdown_max_seconds": "Bevestigd countdownmaximum in seconden"
+          "scene_replay_confirmed": "Replay van ontvangen scenes inschakelen (experimenteel)"
         }
       }
     },
@@ -62,7 +57,6 @@
       "source_in_use": "Dit controlleradres is al in gebruik binnen HA",
       "confirm_unique_source": "Bevestig dat dit controlleradres nog nooit gebruikt is",
       "invalid_ct_range": "Vul de bewezen Kelvin-eindpunten in",
-      "invalid_countdown_range": "Vul het bewezen countdownmaximum in",
       "import_missing_keys": "De geselecteerde configuratie bevat geen geldige bestaande SIG Mesh-keys",
       "import_invalid_metadata": "Meshadres of IV Index ontbreekt of is ongeldig in de oude configuratie",
       "import_wrong_device": "Selecteer de Tuya BLE Mesh-configuratie van dezelfde Bluetoothlamp",
@@ -75,16 +69,72 @@
     "sensor": {
       "rssi": {
         "name": "Signaalsterkte"
+      },
+      "pir_state": {
+        "name": "PIR-status",
+        "state": {
+          "pir": "PIR",
+          "none": "Geen"
+        }
       }
     },
     "number": {
       "countdown": {
-        "name": "Countdown"
+        "name": "Timer"
+      },
+      "pir_delay": {
+        "name": "Brandtijd na beweging"
+      },
+      "standby_time": {
+        "name": "Standby-tijd"
+      },
+      "standby_bright": {
+        "name": "Standby-helderheid"
       }
     },
     "select": {
-      "operating_mode": {
-        "name": "Bedrijfsmoduscode"
+      "work_mode": {
+        "name": "Lichtmodus",
+        "state": {
+          "white": "Wit",
+          "colour": "Kleur",
+          "scene": "Scène"
+        }
+      },
+      "device_mode": {
+        "name": "Bedieningsmodus",
+        "state": {
+          "auto": "Automatisch",
+          "manual": "Handmatig"
+        }
+      },
+      "cds": {
+        "name": "Drempel lichtsensor",
+        "state": {
+          "2000lux": "2000 lux",
+          "300lux": "300 lux",
+          "50lux": "50 lux",
+          "10lux": "10 lux",
+          "5lux": "5 lux"
+        }
+      },
+      "pir_sensitivity": {
+        "name": "Gevoeligheid bewegingssensor",
+        "state": {
+          "low": "Laag",
+          "middle": "Middel",
+          "high": "Hoog"
+        }
+      }
+    },
+    "switch": {
+      "switch_pir": {
+        "name": "Bewegingssensor"
+      }
+    },
+    "binary_sensor": {
+      "battery_low": {
+        "name": "Accu vermoedelijk leeg"
       }
     },
     "button": {

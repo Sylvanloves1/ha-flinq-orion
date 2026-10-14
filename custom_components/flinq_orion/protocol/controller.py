@@ -10,6 +10,11 @@ from .transport import AccessReceiver, ReplayWindow
 from .transmit import encode_upper, lower_segments, segment_ack, decode_ack
 from .errors import MeshError, MeshTimeoutError
 
+# Proxy configuration Set Filter Type: 0x00 accept (white) list, 0x01 reject (black) list.
+REJECT_LIST = 0x01
+# Group addresses are 0xC000–0xFFFF (unicast up to 0x7FFF, virtual 0x8000–0xBFFF).
+GROUP_ADDRESS_START = 0xC000
+
 
 @dataclass(frozen=True)
 class Response:
@@ -89,12 +94,12 @@ class MeshController:
             return seq
 
     async def configure_filter(self):
-        for lower, expected_count in (
-            (b"\x00\x00", 0),
-            (b"\x01" + self.source.to_bytes(2, "big"), 1),
-        ):
+        # Reject list with no entries: the proxy forwards every destination. The lamp
+        # publishes its DP reports to another address (docs/protocol.md). The filter only
+        # applies to this connection and does not change the lamp configuration.
+        for lower, expected in ((bytes((0, REJECT_LIST)), (REJECT_LIST, 0)),):
             future = asyncio.get_running_loop().create_future()
-            self.filter_future = future, expected_count
+            self.filter_future = future, expected
             try:
                 await self._network(lower, ctl=True, proxy=True)
                 async with asyncio.timeout(5):
@@ -230,13 +235,18 @@ class MeshController:
                 # Config responses may originate at the selected mesh proxy server.
                 if not await self.replay.accept(msg.iv_index, msg.src, msg.seq):
                     return
-                if len(msg.lower) == 4 and msg.lower[:2] == b"\x03\x00" and self.filter_future:
-                    future, count = self.filter_future
-                    if int.from_bytes(msg.lower[2:], "big") == count and not future.done():
+                if len(msg.lower) == 4 and msg.lower[0] == 3 and self.filter_future:
+                    future, (kind_expected, count) = self.filter_future
+                    status = msg.lower[1], int.from_bytes(msg.lower[2:], "big")
+                    if status == (kind_expected, count) and not future.done():
                         future.set_result(msg.lower)
                 return
-            if msg.src not in self.allowed_sources or msg.dst != self.source:
+            if msg.src not in self.allowed_sources:
                 return
+            # Messages to other destinations (published reports) are read, never acknowledged.
+            for_us = msg.dst == self.source
+            if not for_us and (msg.ctl or not msg.lower or not msg.lower[0] & 64):
+                return  # Foreign segment ACKs and DeviceKey traffic are not ours to read.
             if msg.ctl:
                 if not await self.replay.accept(msg.iv_index, msg.src, msg.seq):
                     return
@@ -281,7 +291,7 @@ class MeshController:
                 if ack and cache_key in self.completed and msg.iv_index == self.iv_index:
                     await self._network(segment_ack(ack[0], ack[1]), ctl=True, destination=msg.src)
                 return
-            if ack and msg.iv_index == self.iv_index:
+            if ack and for_us and msg.iv_index == self.iv_index:
                 await self._network(segment_ack(ack[0], ack[1]), ctl=True, destination=msg.src)
                 self.completed[cache_key] = ack
                 if len(self.completed) > 32:
@@ -303,7 +313,9 @@ class MeshController:
                 }
             )
             await self.on_response(response)
-            self.channel.receive(response)
+            # A reply to another controller is the lamp's state, but not an answer to us.
+            if for_us or msg.dst >= GROUP_ADDRESS_START:
+                self.channel.receive(response)
 
     def close(self):
         self.closed = True
