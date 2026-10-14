@@ -5,13 +5,28 @@ from typing import Any, cast
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ConfigEntryError
+from homeassistant.helpers import entity_registry as er
 import voluptuous as vol
 from .const import DOMAIN
 from .coordinator import OrionCoordinator
 from .bluetooth import Inspector
 from .session import MeshSession
 
-PLATFORMS = ["sensor", "binary_sensor", "light", "number", "select", "switch", "button"]
+PLATFORMS = ["sensor", "binary_sensor", "light", "switch", "button"]
+# Entities that earlier versions created and that are no longer provided (D-013).
+RETIRED_ENTITY_KEYS = (
+    "operating_mode",
+    "work_mode",
+    "device_mode",
+    "cds",
+    "pir_sensitivity",
+    "countdown",
+    "pir_delay",
+    "standby_time",
+    "standby_bright",
+    "pir_state",
+    "battery_low",
+)
 SERVICES = (
     "capture",
     "query_status",
@@ -20,6 +35,15 @@ SERVICES = (
     "bind_vendor_model",
     "probe_link",
 )
+
+
+def remove_retired_entities(hass: HomeAssistant, entry: ConfigEntry, address: str) -> None:
+    """Remove registry entries of entities this version no longer provides."""
+    registry = er.async_get(hass)
+    retired = {f"{address}_{key}" for key in RETIRED_ENTITY_KEYS}
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if entity.unique_id in retired:
+            registry.async_remove(entity.entity_id)
 
 
 @dataclass
@@ -54,6 +78,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 f"Mesh setup failed ({type(err).__name__}); verify keys, IV and unique source address"
             ) from err
     await coordinator.start()
+    remove_retired_entities(hass, entry, coordinator.address)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(reload_entry))
     if runtime.session:

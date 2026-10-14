@@ -69,62 +69,6 @@
     "sensor": {
       "rssi": {
         "name": "Signal strength"
-      },
-      "pir_state": {
-        "name": "PIR state",
-        "state": {
-          "pir": "PIR",
-          "none": "None"
-        }
-      }
-    },
-    "number": {
-      "countdown": {
-        "name": "Countdown"
-      },
-      "pir_delay": {
-        "name": "Light duration after motion"
-      },
-      "standby_time": {
-        "name": "Standby time"
-      },
-      "standby_bright": {
-        "name": "Standby brightness"
-      }
-    },
-    "select": {
-      "work_mode": {
-        "name": "Light mode",
-        "state": {
-          "white": "White",
-          "colour": "Colour",
-          "scene": "Scene"
-        }
-      },
-      "device_mode": {
-        "name": "Control mode",
-        "state": {
-          "auto": "Automatic",
-          "manual": "Manual"
-        }
-      },
-      "cds": {
-        "name": "Light sensor threshold",
-        "state": {
-          "2000lux": "2000 lux",
-          "300lux": "300 lux",
-          "50lux": "50 lux",
-          "10lux": "10 lux",
-          "5lux": "5 lux"
-        }
-      },
-      "pir_sensitivity": {
-        "name": "Motion sensitivity",
-        "state": {
-          "low": "Low",
-          "middle": "Medium",
-          "high": "High"
-        }
       }
     },
     "switch": {
@@ -133,8 +77,12 @@
       }
     },
     "binary_sensor": {
-      "battery_low": {
-        "name": "Battery probably low"
+      "battery": {
+        "name": "Battery status",
+        "state": {
+          "off": "Normal",
+          "on": "Empty"
+        }
       }
     },
     "button": {

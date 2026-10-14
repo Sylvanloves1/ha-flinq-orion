@@ -1,6 +1,6 @@
 # FlinQ Orion FQC8274 — experimental local integration
 
-Version **0.3.0b1** is a new independent Home Assistant custom integration, not a fork or wrapper. It includes an active local Tuya SIG Mesh client through Home Assistant's Bluetooth stack and ESPHome Bluetooth Proxies. **Local SIG power control has been confirmed on the Orion; other features still require physical verification.** Selecting a protocol enables an experiment, not a claim that all FQC8274 features work.
+Version **0.3.0b2** is a new independent Home Assistant custom integration, not a fork or wrapper. It includes an active local Tuya SIG Mesh client through Home Assistant's Bluetooth stack and ESPHome Bluetooth Proxies. **Local SIG power control has been confirmed on the Orion; other features still require physical verification.** Selecting a protocol enables an experiment, not a claim that all FQC8274 features work.
 
 ## The Orion runs on a battery
 
@@ -17,27 +17,17 @@ The Orion is a solar lamp with a Li-ion battery. With a low battery it wakes for
 
 The first command after an idle period takes longer (measured: 1–4 s to connect and set up). Follow-up commands within 60 s use the open link. The lamp does not report its own changes, such as PIR switching, to Home Assistant in either mode. Decisions: [docs/decision-log.md](docs/decision-log.md), D-009 and D-010.
 
-## Functions (0.3.0b1)
+## Functions (0.3.0b2)
 
-All data points of the Tuya product schema (PID `1ajecbtl`) are available as entities. Only power is confirmed physically; the other functions follow the schema and are not yet tested on the lamp (D-011, D-012).
-
-| Entity | Data point | Notes |
+| Entity | Source | Notes |
 |---|---|---|
-| Light: on/off, brightness, colour | DP 1, 3, 5 via SIG models | |
+| Light: on/off, brightness, colour | DP 1, 3, 5 via SIG models | Only on/off is confirmed physically |
 | Light: colour temperature | DP 4 | 2000–6500 K assumed, as Home Assistant's Tuya integration used |
-| Light mode (white, colour, scene) | DP 2 | Music mode is not offered |
-| Countdown | DP 7 | seconds, 0–86400 |
-| Control mode (automatic, manual) | DP 51 | |
-| Light sensor threshold | DP 53 | 2000, 300, 50, 10 or 5 lux |
-| Motion sensitivity | DP 54 | |
-| Light duration after motion | DP 55 | 5–3600 s |
 | Motion sensor (on/off) | DP 56 | |
-| Standby time | DP 58 | 1–480 min |
-| Standby brightness | DP 59 | 0–100 % |
-| PIR state | DP 52 | read only; meaning of "pir"/"none" not confirmed |
-| Battery probably low | derived | from the low-power advertising cycle; the lamp has no battery data point |
+| Battery status (Normal, Empty) | derived | "Empty" when the lamp shows its low-power advertising cycle; the lamp has no battery data point |
+| Signal strength | advertisements | |
 
-Values appear after the lamp has reported them, at the status refresh (start, then every 30 minutes) or after a change. The lamp has no battery level, charging state or lux measurement.
+0.3.0b2 removes the light mode select, the PIR state sensor and all configuration entities of 0.3.0b1 (D-013). They are also removed from the entity registry. The data point schema stays in the code (`device_profiles`), so the settings can come back without new research.
 
 0.2.9b1 changes that remain: the GATT service cache policy of 0.2.1, the passive check that the lamp still advertises the configured network and unicast address, the connection history in diagnostics and the read-only `flinq_orion.probe_link` action.
 

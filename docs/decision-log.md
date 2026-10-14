@@ -246,3 +246,22 @@ recorded for review.
 | SIG discovery | Adds one vendor DP query, timeout 5 s | 0.2.5 removed it on a suspicion that the battery result disproved | Leave it out (no settings) |
 
 **Decision.** Implemented in 0.3.0b1. Status: open, awaiting review by Sylvan Loves.
+
+## D-013 Fewer entities and a battery status (2026-10-14)
+
+**Context.** After installing 0.3.0b1 the user reviewed the device page. The light mode
+select duplicates the colour modes of the light entity, the PIR state showed "unknown",
+and the configuration settings were not wanted.
+
+**Decision** (Sylvan Loves, settled; supersedes the entity scope of D-011 and the DP 52,
+music mode and old options rows of D-012):
+
+- Remove the light mode select (DP 2), the PIR state sensor (DP 52) and all configuration
+  entities: control mode, light sensor threshold, motion sensitivity, light duration after
+  motion, standby time, standby brightness and countdown.
+- Keep the motion sensor switch (DP 56). "PIR may go" was read as the PIR state sensor;
+  to be confirmed by the user.
+- Rename "Battery probably low" to "Battery status" with the states Normal and Empty
+  (on is Empty), as a binary sensor with translated states.
+- Remove the retired entities from the entity registry at setup.
+- Keep the DP schema and the write path in the code.

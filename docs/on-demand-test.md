@@ -36,16 +36,10 @@ in Home Assistant is the measurement, not the light output.
 
 Send both diagnostics files and the two times you noted.
 
-## Settings and reports (same installation)
+## Motion sensor and reports (same installation)
 
-7. After step 3, open the device page. All settings (light mode, control mode, light sensor
-   threshold, motion sensitivity, light duration after motion, motion sensor, standby time,
-   standby brightness, countdown, PIR state) must show a value, not "unknown".
-   "Unknown" for all of them means that DP reports are still not received; send file 1.
-8. Compare the values with the last cloud status (2026-10-06): control mode automatic,
-   threshold 2000 lux, sensitivity low, light duration 5 s, motion sensor off, standby
-   time 1 min, standby brightness 0 %. A difference is possible if the lamp was changed later.
-9. Write test: set "Light duration after motion" from its value to 10 s. The entity must
-   show 10 s within a few seconds. Then set it back. If the entity shows an error or keeps
-   the old value, send the diagnostics.
-10. "Battery probably low" must be off while the lamp is charged.
+7. After step 3, open the device page. The switch "Motion sensor" must show on or off, not
+   "unknown". "Unknown" means that the lamp does not report DP 56; send file 1.
+8. Write test: switch "Motion sensor" on, wait until the switch shows on, then switch it
+   off again. If the switch shows an error or falls back, send the diagnostics.
+9. "Battery status" must show "Normal" while the lamp is charged.

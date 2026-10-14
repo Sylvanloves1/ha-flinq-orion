@@ -1,19 +1,18 @@
-"""Schema settings (D-011) as entities, and the derived battery warning."""
+"""Schema encoding (D-011), the motion sensor switch, the battery status and the
+removal of entities that are no longer provided (D-013)."""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from custom_components.flinq_orion.binary_sensor import OrionBatteryLow
+from custom_components.flinq_orion import remove_retired_entities
+from custom_components.flinq_orion.binary_sensor import OrionBatteryStatus
 from custom_components.flinq_orion.coordinator import OrionCoordinator
 from custom_components.flinq_orion.device_profiles import ORION_DPS
-from custom_components.flinq_orion.number import OrionSettingNumber
 from custom_components.flinq_orion.protocol.advertisements import PROXY
 from custom_components.flinq_orion.protocol.errors import TuyaDPError
 from custom_components.flinq_orion.protocol.vendor_tuya import DP
-from custom_components.flinq_orion.select import OrionSettingSelect
-from custom_components.flinq_orion.sensor import OrionPirState
 from custom_components.flinq_orion.switch import OrionSettingSwitch
 from test_entities import Coordinator, report
 
@@ -51,52 +50,45 @@ def test_schema_encoding_rejects_values_outside_the_schema(identifier, raw):
 
 
 @pytest.mark.asyncio
-async def test_settings_entities_read_reports_and_write_through_the_schema():
+async def test_motion_sensor_switch_reads_reports_and_writes_through_the_schema():
     c = Coordinator()
-    await report(
-        c.device,
-        value(7, 300),
-        enum(2, 1),
-        enum(51, 0),
-        enum(52, 0),
-        enum(53, 2),
-        enum(54, 1),
-        value(55, 60),
-        DP(56, 1, b"\x01"),
-        value(58, 5),
-        value(59, 250),
-    )
-    mode, control, cds = (OrionSettingSelect(c, i) for i in (2, 51, 53))
-    assert mode.options == ["white", "colour", "scene"] and mode.current_option == "colour"
-    assert control.current_option == "auto" and cds.current_option == "50lux"
-    countdown, standby = OrionSettingNumber(c, 7), OrionSettingNumber(c, 59)
-    assert countdown.unique_id.endswith("_countdown") and countdown.native_value == 300
-    assert countdown.native_max_value == 86400
-    assert standby.native_value == 25 and standby.native_max_value == 100
-    switch, pir = OrionSettingSwitch(c, 56), OrionPirState(c)
-    assert switch.is_on is True and pir.native_value == "pir"
-
+    switch = OrionSettingSwitch(c, 56)
+    assert switch.is_on is None
+    await report(c.device, value(56, 1))  # wrong type for a boolean: stays unknown
+    assert switch.is_on is None
+    await report(c.device, DP(56, 1, b"\x01"))
+    assert switch.is_on is True
     c.device.write_setting = AsyncMock()
-    await mode.async_select_option("scene")
-    await standby.async_set_native_value(30)
     await switch.async_turn_off()
+    await switch.async_turn_on()
     assert [call.args for call in c.device.write_setting.await_args_list] == [
-        (2, "scene"),
-        (59, 300),
         (56, False),
+        (56, True),
     ]
     c.device.write_setting = AsyncMock(side_effect=TuyaDPError("outside the schema"))
     with pytest.raises(HomeAssistantError):
-        await control.async_select_option("manual")
+        await switch.async_turn_off()
 
 
-@pytest.mark.asyncio
-async def test_unreported_or_mistyped_settings_stay_unknown():
-    c = Coordinator()
-    await report(c.device, value(54, 1))
-    assert OrionSettingSelect(c, 54).current_option is None
-    assert OrionSettingNumber(c, 55).native_value is None
-    assert OrionSettingSwitch(c, 56).is_on is None
+def test_retired_entities_are_removed_from_the_registry():
+    registry = Mock()
+    entries = [
+        SimpleNamespace(unique_id="lamp_cds", entity_id="select.threshold"),
+        SimpleNamespace(unique_id="lamp_rssi", entity_id="sensor.signal"),
+        SimpleNamespace(unique_id="lamp_switch_pir", entity_id="switch.motion"),
+        SimpleNamespace(unique_id="lamp_battery_low", entity_id="binary_sensor.old_battery"),
+        SimpleNamespace(unique_id="other_cds", entity_id="select.other_lamp"),
+    ]
+    with (
+        patch("custom_components.flinq_orion.er.async_get", return_value=registry),
+        patch(
+            "custom_components.flinq_orion.er.async_entries_for_config_entry",
+            return_value=entries,
+        ),
+    ):
+        remove_retired_entities(None, SimpleNamespace(entry_id="entry"), "lamp")
+    removed = [call.args for call in registry.async_remove.call_args_list]
+    assert removed == [("select.threshold",), ("binary_sensor.old_battery",)]
 
 
 def advertisement(service_data):
@@ -115,13 +107,14 @@ def node_identity(random):
 
 
 @pytest.mark.asyncio
-async def test_battery_warning_follows_the_low_power_advertising_cycle(tmp_path):
+async def test_battery_status_follows_the_low_power_advertising_cycle(tmp_path):
     entry = Mock()
     entry.entry_id = "test"
     entry.data = {"address": "DC:23:4F:6E:A0:12"}
     entry.options = {}
     c = OrionCoordinator(HomeAssistant(str(tmp_path)), entry)
-    sensor = OrionBatteryLow(c)
+    sensor = OrionBatteryStatus(c)
+    assert sensor.unique_id.endswith("_battery")
     assert sensor.is_on is None and sensor.available
     c.advertisement(advertisement(node_identity(b"\x01" * 8)), None)
     c.advertisement(advertisement(node_identity(b"\x02" * 8)), None)

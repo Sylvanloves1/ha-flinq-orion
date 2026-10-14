@@ -13,3 +13,5 @@ These tests prove implementation behavior against synthetic peers. They do not p
 Tests use published SIG sample keys and synthetic state only; there are no real device keys in the repository. Third-party HA/backoff deprecation warnings are reported separately from test failures.
 
 0.3.0b1 also adds tests for the schema settings: encoding and rejection outside the schema, entities for every setting, writes through the schema, DP reports published to a group address (read, not acknowledged), replies to another controller (state only, never an answer to our request), and the derived battery warning.
+
+0.3.0b2 removes the tests of the retired entities and adds tests for the motion sensor switch and for the removal of retired entities from the entity registry.

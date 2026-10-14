@@ -1,4 +1,4 @@
-"""Derived battery warning; the lamp reports no battery data point (D-011)."""
+"""Derived battery status; the lamp reports no battery data point (D-011, D-013)."""
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.helpers.entity import EntityCategory
@@ -6,23 +6,23 @@ from .entity import OrionEntity
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    async_add_entities([OrionBatteryLow(entry.runtime_data.coordinator)])
+    async_add_entities([OrionBatteryStatus(entry.runtime_data.coordinator)])
 
 
-class OrionBatteryLow(OrionEntity, BinarySensorEntity):
-    """On when the lamp shows its low-power advertising cycle.
+class OrionBatteryStatus(OrionEntity, BinarySensorEntity):
+    """On, shown as "Empty", when the lamp shows its low-power advertising cycle.
 
     Observed on 2026-10-14: with a low battery the lamp woke about every 180 s and
     advertised Node Identity with a new random each time; after charging it advertised
     its Network ID. This is an inference from advertising, not a battery measurement.
     """
 
-    _attr_translation_key = "battery_low"
+    _attr_translation_key = "battery"
     _attr_device_class = BinarySensorDeviceClass.BATTERY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, c):
-        super().__init__(c, "battery_low")
+        super().__init__(c, "battery")
 
     @property
     def available(self):
