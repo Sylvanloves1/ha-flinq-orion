@@ -629,3 +629,26 @@ advertised its Network ID and kept a link from an Apple central for the full tes
 strongly supports H4 (battery or power state) as the cause of the failures since about
 09:25 UTC. It does not yet show that the Home Assistant path works; the next step is
 `probe_link` with only FlinQ Orion enabled.
+
+## probe_link with only FlinQ Orion enabled (capture 18, 2026-10-14, 16:53–17:08 UTC)
+
+Bluetooth Mesh stayed disabled. The lamp had been charged over USB-C before this run;
+whether it was still on the charger during the run is not recorded.
+
+- 16:53–17:00: no link. HA reported "no scanner currently has it in its discovered
+  devices", then connect timeouts.
+- 17:00:20: link open, setup 0.88 s, `network_evidence` `network_id_match`.
+- The link stayed up for the full probe (491.6 s at the last read) and was still connected
+  when diagnostics were downloaded.
+- 51 OnOff Get reads: 41 answered within the 2 s probe timeout, 10 timed out. The packet
+  buffer (last 17 reads) shows that timed-out reads were answered late, at 3.9 s and 4.4 s.
+  Latency in that window: 0.16–4.4 s, median about 0.6 s. The morning 0.2.1 sessions
+  showed 0.1–0.25 s.
+- Ten of twelve reads between 17:04:23 and 17:06:13 exceeded 2 s. After that latency
+  returned to 0.16–1.3 s.
+
+Conclusion: with a charged lamp, one Home Assistant link through the ESPHome proxy was
+stable for at least 8 minutes, and every read was answered. Response time varies
+strongly. Not established: where the delay arises (lamp application, radio link, or
+ESP32 to Home Assistant transfer). A proxy log with `esp32_ble` at VERBOSE shows the
+ESP32 notification times and separates these.
