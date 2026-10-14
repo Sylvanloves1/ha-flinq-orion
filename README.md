@@ -1,74 +1,185 @@
-# FlinQ Orion FQC8274: experimental local integration
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Sylvanloves1/ha-flinq-orion/main/custom_components/flinq_orion/brand/icon@2x.png" alt="FlinQ Orion icon" width="160">
+</p>
 
-Version **0.4.0b2** is a new independent Home Assistant custom integration, not a fork or wrapper. It includes an active local Tuya SIG Mesh client through Home Assistant's Bluetooth stack and ESPHome Bluetooth Proxies. **Local SIG power control has been confirmed on the Orion; other features still require physical verification.** Selecting a protocol enables an experiment, not a claim that all FQC8274 features work.
+# FlinQ Orion for Home Assistant
 
-## The Orion runs on a battery
+[![Release](https://img.shields.io/github/v/release/Sylvanloves1/ha-flinq-orion)](https://github.com/Sylvanloves1/ha-flinq-orion/releases)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
+[![Tests](https://github.com/Sylvanloves1/ha-flinq-orion/actions/workflows/tests.yml/badge.svg)](https://github.com/Sylvanloves1/ha-flinq-orion/actions/workflows/tests.yml)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.9%2B-41BDF5)
+[![License: MIT](https://img.shields.io/github/license/Sylvanloves1/ha-flinq-orion)](LICENSE)
 
-The Orion is a solar lamp with a Li-ion battery. With a low battery it wakes for a few seconds about every 3 minutes and no Bluetooth link works. Charge it over USB-C when it gets little sun. Do not use pairing mode or a power-cycle sequence as a fix: three quick power toggles reset Tuya lamps. Background: [docs/protocol.md](docs/protocol.md), sections from "Passive monitor 2" on.
+Control the **FlinQ Smart Outdoor Lamp Orion** (FQC8274) locally from Home Assistant. The integration talks to the lamp over Bluetooth (Tuya SIG Mesh), through the Bluetooth adapter of Home Assistant or an ESPHome Bluetooth proxy. There is no cloud, no Smart Life app and no gateway in the command path.
 
-## Networks and lamps (0.4.0b1)
+> This is an independent community project. It is not made, supported or endorsed by FlinQ or Tuya.
 
-0.4.0b1 is a test prerelease. A FlinQ Orion entry is now one **mesh network**: the keys, the controller address and the connection mode are set once in its Options. Each lamp is a **lamp subentry** of that network.
+## Quick install
 
-| Task | How |
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Sylvanloves1&repository=ha-flinq-orion&category=integration)
+
+After the download and a restart:
+
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=flinq_orion)
+
+Read [Requirements](#requirements) first: you need the mesh keys of your lamp.
+
+## Features
+
+- 💡 **Light**: on/off, brightness, colour and colour temperature.
+- 🏃 **Motion sensor switch**: turn motion detection of the lamp on or off.
+- 🔋 **Battery status**: shows "Empty" when the lamp goes into its low-power cycle.
+- 📶 **Signal strength** of the lamp.
+- 🕸️ **One mesh network, many lamps**: set the keys once, then add lamps from a list of nearby lamps.
+- 🔌 **On-demand connections**: a short Bluetooth link per command, which saves the lamp battery.
+- 🏠 **Local only**: no Internet connection or Tuya account is needed for daily use.
+- 🩺 **Diagnostics**: per network and per lamp, with keys and addresses removed.
+
+### What is confirmed
+
+Tested with one Orion through an ESPHome Bluetooth proxy on Home Assistant 2026.10.1.
+
+| Function | Status |
 |---|---|
-| Upgrade from 0.3.x | Automatic. The existing entry becomes the network and the lamp becomes its first lamp subentry. Keys, controller address 2, the sequence and replay state, the entity IDs and their history stay the same. |
-| Add a lamp | Open the network entry and select **Add lamp**. The list shows nearby mesh proxies, with lamps that advertise the Network ID of these keys first ("this network"). A lamp with a low battery advertises only Node Identity and shows as "network not verified". You can also type the Bluetooth address. |
-| Discovery | Home Assistant offers a lamp found over Bluetooth only when it advertises the Network ID of a configured network, or when no network is configured and a Tuya BLE Mesh entry holds that lamp. Other mesh devices are ignored. |
-| Mesh address | Detected on the first direct connection, from the source of the lamp's Proxy Filter Status, and stored with the lamp. Change it, the name or the optional DeviceKey with **Reconfigure** on the lamp (0 = detect again). |
-| Actions | The `flinq_orion.*` actions select a lamp **device**, not a config entry. Scripts that use `entry_id` must change to `device_id`. |
+| On/off | Confirmed on a real lamp |
+| Brightness, colour, colour temperature | The lamp reports these states; the physical result is not confirmed yet. Colour temperature uses 2000–6500 K, the range of the Home Assistant Tuya integration. |
+| Motion sensor switch | Built from the Tuya data point schema; the physical result is not confirmed yet |
+| Battery status | Derived from the advertising pattern of the lamp; the lamp has no battery data point |
+| Several lamps through one link | Tested with simulated lamps only |
 
-One Bluetooth link serves the whole network (D-015). A command for another lamp goes through the lamp that holds the link. If that lamp does not answer, the integration connects to it directly and sends the command once more. Forwarding between these lamps is not proven yet: test it with two lamps and report the diagnostics. Each lamp has its own device diagnostics; the network entry diagnostics show the link history and all lamps.
+Please report your results in an [issue](https://github.com/Sylvanloves1/ha-flinq-orion/issues), with the diagnostics attached.
 
-## Connection mode (0.3.0b1)
+## Requirements
 
-0.3.0b1 is a test prerelease. The option **Connection mode** controls the Bluetooth link:
+- **Home Assistant 2026.9 or newer.**
+- **Bluetooth near the lamp**: the Home Assistant Bluetooth integration with a local adapter, or an [ESPHome Bluetooth proxy](https://esphome.io/components/bluetooth_proxy.html) with active connections enabled.
+- **The mesh keys of the lamp**: NetKey, AppKey and the IV Index. The integration does not read keys from the Smart Life app or the Tuya cloud; no public way to get them from Tuya is known. Today there are two ways:
+  - Import them from the [Tuya BLE Mesh](https://github.com/11z4t/tuya-ble-mesh) integration, if that integration added your lamp.
+  - Enter them by hand.
 
-| Mode | Behaviour |
-|---|---|
-| `on_demand` (default) | A command opens a link; the link closes after 60 s without activity. The status is refreshed when Home Assistant starts and then every 30 minutes, when the lamp is seen. If the lamp cannot be reached within about 20 s, the command fails with "Lamp not reachable over Bluetooth". The light is available when the lamp advertised within the availability timeout. |
-| `persistent` | The 0.2.9b1 behaviour: keep one link open and reconnect with backoff. The light is available only while the link is up. |
-
-The first command after an idle period takes longer (measured: 1–4 s to connect and set up). Follow-up commands within 60 s use the open link. Since 0.4.0b1 the connection mode applies to the whole network. The lamp does not report its own changes, such as PIR switching, to Home Assistant in either mode. Decisions: [docs/decision-log.md](docs/decision-log.md), D-009 and D-010.
-
-## Functions (0.3.0b2)
-
-| Entity | Source | Notes |
-|---|---|---|
-| Light: on/off, brightness, colour | DP 1, 3, 5 via SIG models | Only on/off is confirmed physically |
-| Light: colour temperature | DP 4 | 2000–6500 K assumed, as Home Assistant's Tuya integration used |
-| Motion sensor (on/off) | DP 56 | |
-| Battery status (Normal, Empty) | derived | "Empty" when the lamp shows its low-power advertising cycle; the lamp has no battery data point |
-| Signal strength | advertisements | |
-
-0.3.0b2 removes the light mode select, the PIR state sensor and all configuration entities of 0.3.0b1 (D-013). They are also removed from the entity registry. The data point schema stays in the code (`device_profiles`), so the settings can come back without new research.
-
-0.2.9b1 changes that remain: the GATT service cache policy of 0.2.1, the passive check that the lamp still advertises the configured network and unicast address, the connection history in diagnostics and the read-only `flinq_orion.probe_link` action.
-
-Implemented:
-
-- UI setup/options, a network entry with one subentry per lamp, discovery of lamps of a configured network, GATT/service-data diagnostics.
-- Existing-network onboarding using NetKey/AppKey, optional DeviceKey, IV Index and a dedicated unused controller unicast address. No cloud calls, automatic provisioning or factory reset.
-- Authenticated proxy filter configuration, AES-CMAC/CCM network/access traffic, DeviceKey messages, segmented access transmission/reception, complete ACKs and missing-segment retransmission.
-- Serialized requests, source/opcode/value response matching, read-only query retries, report-driven state, persistent replay protection, automatic GATT reconnect with backoff.
-- Crash-safe sequence ranges saved through atomic replace and file/directory fsync, outside the HA event loop. Write failures stop transmission. Sequence storage is scoped to the network/controller address, not an entity or config-entry ID.
-- Conditional light with power/brightness, optional Kelvin/HS (HA also translates RGB actions), captured scenes, observed mode select and a countdown number with confirmed units/range.
-- Unknown DPs remain diagnostics. No DP51–59 meanings are guessed or writable.
-- HA diagnostics, EN/NL UI, HACS structure, CI and protocol/entity/session/storage tests.
-
-Missing/unverified: forwarding between lamps over one link, automatic acquisition of mesh keys (see [docs/protocol.md](docs/protocol.md), "How users get the mesh keys"), new-device provisioning/Tuya authentication, exact Orion wire format/mode codes, CT endpoints/scaling, all scene enumeration, PIR mappings, timestamp response format, automated IV Update/recovery and key refresh. Secure beacons are authenticated; incompatible IV/key-refresh transitions block further transmission rather than guess a new state. Segmentation supports direct unicast peers, not Friend/OBO acknowledgements or virtual/group control.
+  Pairing a new or reset lamp directly from this integration (provisioning) is planned. See [Limitations and roadmap](#limitations-and-roadmap).
+- **A free controller address**: a mesh unicast address (decimal) that no app, gateway or other controller has ever used in this mesh network.
 
 ## Installation
 
-Copy `custom_components/flinq_orion` to `/config/custom_components/flinq_orion` and restart HA. Alternatively, after this repository is published, add `https://github.com/Sylvanloves1/ha-flinq-orion` in HACS → Custom repositories → Integration.
+### HACS (recommended)
 
-Add **FlinQ Orion** via Settings → Devices & services or discovery and enter the Bluetooth address and a name of the first lamp. This creates the network. Add more lamps later with **Add lamp** on the network entry. Without mesh keys, observation mode remains usable. The RSSI entity is created immediately. Other entities appear after authenticated reports establish the relevant fields and you select the experimental protocol. Device firmware 5.1 is the supplied profile metadata, not a firmware version independently read by this integration.
+1. Open HACS in Home Assistant.
+2. Open the menu (three dots, top right) and select **Custom repositories**.
+3. Enter `https://github.com/Sylvanloves1/ha-flinq-orion`, select the type **Integration** and select **Add**.
+4. Search for **FlinQ Orion** and select **Download**.
+5. Restart Home Assistant.
 
-## One first hardware test (no keys required)
+The "Quick install" button above does steps 1 to 3 for you.
 
-1. Install version **0.2.1**, restart HA, and add FlinQ Orion with `DC:23:4F:6E:A0:12`. Leave Options at `observe`.
-2. Keep the lamp powered, close Smart Life completely and ensure `bluetooth-proxy-buiten` has a free active connection slot.
-3. In Developer tools → Actions run:
+### Manual
+
+1. Download the latest [release](https://github.com/Sylvanloves1/ha-flinq-orion/releases).
+2. Copy the folder `custom_components/flinq_orion` to `/config/custom_components/flinq_orion`.
+3. Restart Home Assistant.
+
+## Setup
+
+### 1. Add the mesh network and the first lamp
+
+Go to **Settings → Devices & services → Add integration → FlinQ Orion**. Enter the Bluetooth address and a name of your first lamp. This creates the mesh network with the lamp in it.
+
+Home Assistant can also find the lamp itself. It offers a lamp only when the lamp belongs to a network that you already configured, or when the Tuya BLE Mesh integration holds the lamp. Mesh devices of your neighbours are ignored.
+
+Without keys the integration stays in observation mode: it shows the signal strength and collects diagnostics, but it does not send anything.
+
+### 2. Enter the keys
+
+Before you activate the network:
+
+- Disable (do not delete) the Tuya BLE Mesh entry of the lamp, so that two integrations do not connect at the same time.
+- Close the Smart Life app.
+
+Open the network and select **Configure**:
+
+1. Optional: under **Import existing mesh credentials from Tuya BLE Mesh**, select the entry of your lamp and submit. The keys and the IV Index are filled in. The mesh address and the DeviceKey are stored with that lamp.
+2. Select the **Protocol mode**. Use `sig` for the Orion.
+3. Keep the **Connection mode** at `on_demand`.
+4. Enter a **dedicated unused controller address** and confirm that it was never used. Do not reuse the address of the Tuya BLE Mesh integration; the form blocks it.
+5. Submit the form and leave the light metadata settings off unless you have confirmed them.
+
+| Protocol mode | What it does |
+|---|---|
+| `observe` | Passive diagnostics only, nothing is sent |
+| `query_only` | Reads the state, does not control the light |
+| `sig` | Standard SIG Mesh light control (recommended for the Orion) |
+| `vendor_dp` | Experimental control through Tuya data points |
+
+### 3. Add more lamps
+
+Open the network and select **Add lamp**. The list shows nearby lamps. Lamps that advertise the Network ID of your keys come first, marked "this network". A lamp with a low battery is marked "network not verified". You can also type the Bluetooth address.
+
+The mesh address of a lamp is found on its first connection. To rename a lamp, or to change its mesh address or DeviceKey, select **Reconfigure** on the lamp.
+
+## Entities
+
+Each lamp is a device with these entities:
+
+| Entity | Type | Notes |
+|---|---|---|
+| Light (the lamp name) | light | Appears after the lamp reported its power state |
+| Motion sensor | switch | Turns motion detection on or off |
+| Battery status | binary sensor | Normal or Empty; diagnostic |
+| Signal strength | sensor | dBm; diagnostic |
+| Query status and capabilities | button | Reads the lamp state; diagnostic |
+
+## Connection modes
+
+| Mode | Behaviour |
+|---|---|
+| `on_demand` (default) | A command opens a link. The link closes after 60 s without activity. The state is read at start-up and every 30 minutes while the lamp is seen. The light is available when the lamp advertised within the availability timeout (default 300 s). |
+| `persistent` | One link stays open and reconnects after a loss. The light is available only while the link is up. |
+
+The first command after a pause takes 1–4 s, because the link must be set up. Commands within 60 s use the open link.
+
+One link serves the whole network. A command for another lamp goes through the lamp that holds the link. If that lamp does not answer, the integration connects to the other lamp directly and sends the command once more.
+
+## The lamp runs on a battery
+
+The Orion is a solar lamp with a Li-ion battery. With a low battery it wakes for a few seconds about every 3 minutes, and no Bluetooth link works. The **Battery status** entity then shows "Empty". Charge the lamp over USB-C when it gets little sun.
+
+Do not use pairing mode or switch the power on and off quickly to fix a connection. Three quick power toggles reset Tuya lamps, and a reset lamp leaves your mesh network.
+
+## Actions
+
+The actions select a lamp **device**.
+
+| Action | What it does |
+|---|---|
+| `flinq_orion.query_status` | Reads the lamp state; returns the result |
+| `flinq_orion.query_dp` | Reads one Tuya data point |
+| `flinq_orion.dump_capabilities` | Returns the models and data points that the lamp reported; does not contact the lamp |
+| `flinq_orion.probe_link` | Measures how long Bluetooth links last, with read-only requests |
+| `flinq_orion.capture` | Records Bluetooth traffic for diagnostics |
+| `flinq_orion.bind_vendor_model` | Advanced: binds an existing AppKey to the Tuya vendor model; needs the DeviceKey and explicit confirmation |
+
+Example:
+
+```yaml
+action: flinq_orion.query_status
+data:
+  device_id: <select your lamp in the action editor>
+response_variable: status
+```
+
+## Troubleshooting
+
+| Symptom | What to do |
+|---|---|
+| "Lamp not reachable over Bluetooth" | Check the Battery status and charge the lamp. Check that a Bluetooth proxy is near the lamp and has a free connection slot. |
+| The light is unavailable | The lamp did not advertise within the availability timeout. Usually the battery is low or the lamp is out of range. |
+| The first command is slow | Normal in `on_demand` mode: the link is set up first (1–4 s). |
+| No light entity | The light appears after the lamp reported its power state. Select **Query status and capabilities**. |
+| Changes made on the lamp do not show | The lamp does not report its own changes, such as motion switching. |
+
+To collect information for an issue:
+
+1. Turn on debug logging:
 
    ```yaml
    action: logger.set_level
@@ -76,45 +187,46 @@ Add **FlinQ Orion** via Settings → Devices & services or discovery and enter t
      custom_components.flinq_orion: debug
    ```
 
-4. Run **FlinQ Orion: Capture Bluetooth diagnostics** (`flinq_orion.capture`), select the lamp, duration **20 seconds**. Do not operate Smart Life during capture.
-5. Download diagnostics from the integration entry. Return only `state.gatt` and `packets`, or the matching `ORION RX` log lines. Inspect raw advertisement identifiers before sharing. Never send keys, a full backup or an unsanitized HCI snoop capture.
+2. Reproduce the problem.
+3. Download the diagnostics: from the network entry (link history and all lamps) or from the lamp device. Keys and Bluetooth addresses are removed.
 
-This establishes whether the lamp exposes Mesh Proxy `0x1828`, Provisioning `0x1827`, or another Tuya bearer. Strong RSSI is not proof of a usable command bearer. Ordinary ESPHome Bluetooth Proxies do not replace a SIG Mesh Proxy Server. HA advertisement callbacks do not expose arbitrary raw AD type `0x2a` mesh bearer packets, so Smart Life traffic is not guaranteed to appear in this capture.
+Never share your keys, a full backup or an unfiltered Bluetooth capture.
 
-## Activate the experimental command path when existing keys are available
+## Limitations and roadmap
 
-In Options select:
+- **No pairing from this integration yet.** You need the keys of an existing mesh network. Provisioning of new or reset lamps is planned for a 1.x release. It will need a factory reset, and the lamp then leaves Smart Life.
+- The lamp does not send its own changes to Home Assistant.
+- Forwarding between two physical lamps over one link is not tested yet.
+- Colour and colour temperature mapping are not physically confirmed.
+- A change of the IV Index or a key refresh in the mesh network stops sending until you repair the configuration. There is no automatic recovery.
 
-| Protocol | Behavior |
-|---|---|
-| `observe` | Passive discovery/capture; no mesh transmission |
-| `query_only` | Authenticated proxy setup, read-only DP/composition discovery; no light control |
-| `vendor_dp` | Experimental documented Tuya compact DP reads/writes; fields must first be observed |
-| `sig` | Standard SIG light queries/sets; requires observed model status; earlier generic OnOff failure remains relevant |
+## Security and privacy
 
-Enter the existing NetKey/AppKey and current IV Index in the Options of the network. The DeviceKey is per lamp and optional (composition and the explicit vendor-bind action): set it with **Reconfigure** on the lamp, or import it. A NetKey can be used by one network entry only. Keys cannot be derived from normal encrypted advertisements and are never fetched from cloud by this version.
+- Keys are stored in the Home Assistant configuration, without extra encryption. Protect your backups.
+- Diagnostics remove keys, Bluetooth addresses and other identifiers.
+- The integration keeps a sequence counter per controller address. Do not delete its storage files or restore an old copy of them. After a restore of an old backup, choose a new, unused controller address.
+- There is no reset action and no way to send arbitrary packets.
 
-Enter a **dedicated never-used unicast controller address**, in decimal, distinct from all lamp elements and every Smart Life/gateway/controller/node address. Do not copy Smart Life's source address or pick a random address without checking the existing mesh allocation. Check the unique-source confirmation only after verification. The mesh address of each lamp is detected on its first direct connection (the existing lamp keeps **176 (`0x00B0`)**); element routing uses composition when available.
+## Technical documentation
 
-Leave unconfirmed profile switches off. CT requires proven Kelvin endpoints **and a linear Kelvin mapping**; endpoints alone do not establish scaling. HSV requires confirmed 12-character encoding. Optional mode values must have an observed enum report and confirmed meaning; `-1` leaves mode selection manual. Scenes can only replay captured DP6 blobs after explicit enablement; names `Scene 1`, etc. are capture labels, not an exhaustive firmware scene list. Countdown requires confirmed seconds and maximum.
+- [Technical notes](docs/technical.md): protocol modes, key import details and the first hardware test
+- [Protocol findings](docs/protocol.md): what is known about the lamp, with captures
+- [Decision log](docs/decision-log.md): why the integration works the way it does
+- [Test status](docs/testing.md) and test procedures ([network](docs/network-test.md), [on demand](docs/on-demand-test.md), [link](docs/link-test-procedure.md))
+- [Development](docs/development.md)
 
-After reload, the integration connects and performs bounded read-only discovery. It never automatically adds keys or binds models. If the vendor model requires a binding to an already installed AppKey, the advanced `bind_vendor_model` action can add that binding using the existing DeviceKey, known AppKey index and explicit `confirm: true`. This is a configuration write; do not use it as a speculative response to every timeout.
+## Contributing
 
-Turn the discovered light on/off and inspect both the physical lamp and the reports. No optimistic state is used. A matching report confirms protocol state, not independently observed physical light output. If no reports arrive, inspect diagnostics for NID/MIC/IV errors, proxy filter timeouts and GATT services instead of guessing values.
+Issues and pull requests are welcome. Attach the diagnostics to an issue. To run the checks locally:
 
-## Security and maintenance
+```bash
+pip install -r requirements-dev.txt
+ruff check custom_components tests
+ruff format --check custom_components tests
+mypy custom_components/flinq_orion
+pytest -q
+```
 
-HA config-entry files store keys locally without additional encryption. Password selectors mask the UI; diagnostics redact keys. Protect HA files/backups. Durable sequence/replay files contain counters and a network fingerprint, not secret keys. Do not edit/delete them. Restoring an old backup or losing cryptographic state requires a new verified unused controller address or external validated recovery; a restored counter cannot establish that intervening sequence numbers were never transmitted.
+## License
 
-No daily Internet or Smart Life dependency exists in the command path. HA restart reloads credentials and skips unused sequence reservations. There is no reset or arbitrary packet-injection action. See [protocol findings](docs/protocol.md), [development](docs/development.md) and [test status](docs/testing.md).
-
-
-## Import keys from an existing Tuya BLE Mesh entry (0.2.1)
-
-1. Open the FlinQ Orion network → Options. Under **Import existing mesh credentials from Tuya BLE Mesh**, select the old entry of a lamp in this network and submit. Only entries with the MAC address of one of the lamps are offered.
-2. The form returns with NetKey/AppKey and IV Index prefilled. The mesh address and the optional DeviceKey are stored with that lamp when you finish the options. The importer verifies available standard network/node identities and captured secure beacons; incompatible evidence rejects the import. If no verifiable evidence is available, the debug event explicitly records that verification did not occur.
-3. Select a dedicated verified unused controller source address. The previous Tuya BLE Mesh controller address is shown for comparison and is blocked from reuse. Its sequence, reservation store, passwords and cloud credentials are never copied. Confirm uniqueness, keep **query_only** initially, and leave unconfirmed light metadata off.
-4. Before saving active mode, disable the old Tuya BLE Mesh config entry through HA to avoid competing GATT sessions. Disable it rather than deleting its credentials. Close Smart Life, finish the options form and allow read-only discovery to run.
-5. Download FlinQ diagnostics again and inspect `credential_import`, mesh/MIC errors, composition and DP reports. Power control is enabled later by selecting `vendor_dp` after a valid DP1 report (or explicitly testing SIG mode). Import is not proof that the AppKey is already bound to the vendor model.
-
-This optional onboarding helper reads Home Assistant's config-entry API. It never imports/calls the old integration's code, modifies its entry or depends on it for daily operation. Removing the old integration after verification does not remove credentials copied into FlinQ Orion.
+[MIT](LICENSE). FlinQ, Orion, Tuya and Smart Life are trademarks of their owners. They are used here only to identify the supported device.

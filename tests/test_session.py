@@ -187,7 +187,8 @@ async def test_link_lifetime_survives_packet_records_and_probe_measures_each_rea
     device_patch, connect_patch = patched_connection(AsyncMock(return_value=client))
     try:
         with device_patch, connect_patch:
-            summary = await s.probe_link(c, seconds=0.05, interval=0.01)
+            # The window allows several reads on a slow CI runner; the first read also connects.
+            summary = await s.probe_link(c, seconds=0.5, interval=0.01)
             assert summary["probes"] >= 2
             assert summary["responses"] == summary["probes"]
             assert summary["links_used"] == 1 and summary["longest_link_s"] >= 0
@@ -215,7 +216,7 @@ async def test_probe_records_failures_and_continues(tmp_path):
     )
     try:
         with device_patch, connect_patch:
-            summary = await s.probe_link(c, seconds=0.03, interval=0.01)
+            summary = await s.probe_link(c, seconds=0.3, interval=0.01)
         assert summary["responses"] == 0
         assert summary["failures"] == {"DeviceUnavailableError": summary["probes"]}
         assert summary["links_used"] == 0 and summary["probes"] >= 2

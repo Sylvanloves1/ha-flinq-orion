@@ -402,3 +402,26 @@ because it has the name of the key option.
 **Recommendation.** Now as 0.4.0b2.
 
 **Decision.** Now as 0.4.0b2, chosen by Sylvan Loves. Status: settled.
+
+## D-020 Release 1.0.0 (2026-10-14)
+
+**Context.** The user asked for an official 1.0.0 release, a README for Home Assistant users
+and a logo that Home Assistant shows for the integration.
+
+**Considerations.** Home Assistant 2026.9.0 and later serve brand images of a custom
+integration from its `brand` folder (checked in the 2026.9.0 and 2026.10.1 source), so no
+pull request to the brands repository is needed. FlinQ is a trademark of another company and
+this integration is not official, so the logo must be an own design. 0.4.0b2 had not run on
+the lamp when 1.0.0 was chosen; only power control is confirmed physically, forwarding between
+two lamps is not tested, and other users cannot pair without `tuya_ble_mesh` until
+provisioning (D-017) exists.
+
+| Question | Options | Recommended | Decision |
+|---|---|---|---|
+| Timing | after a test of 0.4.0b2; now; 0.4.0 now and 1.0.0 after provisioning | after a test of 0.4.0b2 | now |
+| Logo | outdoor lamp with mesh nodes; lamp with sun; monogram | outdoor lamp with mesh nodes | outdoor lamp with mesh nodes, warm yellow and dark grey, transparent |
+| CHANGELOG.md | add (Keep a Changelog); release notes only | add | release notes only |
+| Release flow | all by Claude; pull request by Claude, merge by the user; later | all by Claude | pull request by Claude, merge by the user, then tag and release |
+
+**Decision.** As in the Decision column, chosen by Sylvan Loves. Status: settled. Provisioning
+(D-017) moves from 0.5 to a 1.x minor release.
