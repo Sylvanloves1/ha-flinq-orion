@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Sylvanloves1/ha-flinq-orion/main/custom_components/flinq_orion/brand/icon@2x.png" alt="FlinQ Orion icon" width="160">
-</p>
-
 # FlinQ Orion for Home Assistant
 
 [![Release](https://img.shields.io/github/v/release/Sylvanloves1/ha-flinq-orion)](https://github.com/Sylvanloves1/ha-flinq-orion/releases)
