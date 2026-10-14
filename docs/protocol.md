@@ -98,3 +98,48 @@ A standard Network Identity is compared to k3(NetKey). For Node Identity, Identi
 The legacy source is retained only as an exclusion and UI hint. The controller source, sequence, mesh passwords and cloud credentials are never migrated. Import defaults to query_only with source unset. A new source must be verified unused before activation; none is guessed from an incomplete view of mesh allocations.
 
 Source for the legacy field schema: [Tuya BLE Mesh constants](https://github.com/11z4t/tuya-ble-mesh/blob/main/custom_components/tuya_ble_mesh/const.py), [SIG provisioning entry storage](https://github.com/11z4t/tuya-ble-mesh/blob/main/custom_components/tuya_ble_mesh/config_flow_sig.py). These were studied only as a documented data layout; no implementation was copied.
+
+## Authenticated physical discovery — 2026-10-14 / 0.2.1
+
+The next user diagnostics confirm successful Proxy Filter Status, Secure Network Beacon authentication (IV Index 0, no IV Update or Key Refresh), DeviceKey-decrypted segmented Composition Data Status with complete transport ACK, and AppKey-decrypted vendor DATA from the lamp. Controller address 2 is newly assigned by the user for this single-device network. NID 0x33 is now derived from the imported NetKey and matches authenticated traffic; it remains derived, not a constant.
+
+Composition Page 0 has one element at the supplied primary address, 15 SIG models, company 0x07D0, product 0x0300, version 0x3135, CRPL 105 and features 7. SIG models include OnOff 0x1000, Lightness 0x1300, CTL 0x1303, CTL Temperature 0x1306 and HSL 0x1307. Vendor model is 0x07D0/0x0004. A sanitized decoded fixture contains only model metadata and no encrypted traffic, addresses, identifiers or keys.
+
+The all-DP READ received two successfully decrypted DATA replies with command byte 01 and no DP groups. In 0.2.1 the query matcher requires nonempty data, so it incorrectly presents these empty responses as a timeout and retries. The local correction records `empty_dp_report` and does not invent capabilities or retry a received empty reply. This establishes AppKey reception/response but does not establish that any DP write works or that all SIG models are bound to that AppKey.
+
+Next physical experiment uses the already implemented SIG read-only startup queries in `sig` mode. This is motivated by the actual composition and Tuya's published lighting mappings; it is not a claim that Generic OnOff physically works. No model-bind or power writes are required for this read-only experiment.
+
+## Physical SIG status discovery — 2026-10-14 / 0.2.1
+
+After switching to SIG mode, the lamp returned authenticated OnOff Status (`01 01 00`), Lightness Status (`99 99 99 99 01`), CTL Temperature Status (`20 21 00 00 20 21 00 00 00`) and HSL Status (`cc 4c 00 00 ff ff 84`). Current protocol state decodes to OnOff=true, Lightness Actual=39321 (60%), CTL temperature=8480 and HSL=(19660,0,65535). These are received model states, not an independently verified physical power/color observation. The HSL lightness/hue/saturation convert to HSV red at about 60% brightness; this does not establish the active Tuya work mode or DP5 vendor encoding.
+
+CTL Temperature Range Get still timed out. Do not interpret reported 8480 as a measured physical Kelvin value or infer 800–20000 as the lamp's real white-temperature range. CT remains unadvertised as an HA light capability until the range/scaling evidence exists.
+
+A temporary initial DeviceUnavailableError was followed by a successful reconnect. Sequence reservation survived the options reload: the controller skipped the previous unused reservation tail and used fresh sequence values from the next block. The counter figures in these captures remain observations, not implementation defaults.
+
+Next experiment: use the discovered light entity to send only OFF and ON, observing physical output and corresponding reports. No vendor configuration/model-bind writes are indicated by the current successful SIG read responses.
+
+One-byte vendor DATA `01` remains semantically ambiguous: the pass-through decoder yields no DP groups, while Tuya's lighting documentation separately describes a single-byte lighting-mode payload. A mode interpretation is only a candidate, not a confirmed DP2 enum or a reason to send a guessed mode write. The timeout correction acknowledges receipt without assigning either meaning to a new entity.
+
+## Responsiveness correction (0.2.2)
+
+The second HA capture and user test confirm physical SIG power control. Once
+transmitted, acknowledged commands returned in approximately 0.1–0.25 seconds.
+An unanswered CTL Temperature Range Get was retried after 15 seconds and held
+the serialized command queue for 30 seconds. Discovery reads now wait at most
+2 seconds each, without retries. Unsupported discovery queries do not count as
+control failures. Commands retain their normal response timeout and no write retries.
+An empty vendor response completes discovery without inferring DP capabilities.
+
+All SIG light SET messages now include Transition Time 0 and Delay 0, rather
+than using the node's Default Transition Time when these optional fields are
+omitted. Reported remaining-time fields in the capture were nonzero. This change
+requests immediate application; physical timing must be verified on the lamp.
+See [Nordic CTL API](https://github.com/nrfconnect/sdk-nrf/blob/main/include/bluetooth/mesh/light_ctl.h)
+and [ESP-IDF generic model definitions](https://github.com/espressif/esp-idf/blob/master/components/bt/esp_ble_mesh/api/models/include/esp_ble_mesh_generic_model_api.h).
+Parameter changes skip redundant power-on writes when the connected lamp already
+reports on; an explicit power-on action still sends a command.
+
+Update to 0.2.2 and restart HA, keeping the existing entry, keys, controller address
+and sequence storage. Change brightness/color after startup and compare response
+time. Re-pairing or deleting sequence storage is unnecessary and unsafe.

@@ -48,7 +48,31 @@ async def test_sig_temperature_range_and_set_opcodes():
     await d.set_brightness(255)
     await d.set_temperature(4000)
     await d.set_color((0, 100), 255)
-    assert calls[0].hex() == "82020007"
-    assert calls[1].hex() == "824cffff07"
-    assert calls[2].hex() == "8264a00f000007"
-    assert calls[3].hex() == "827600800000ffff07"
+    assert calls[0].hex() == "820200070000"
+    assert calls[1].hex() == "824cffff070000"
+    assert calls[2].hex() == "8264a00f0000070000"
+    assert calls[3].hex() == "827600800000ffff070000"
+
+
+@pytest.mark.asyncio
+async def test_discovery_bounds_unsupported_reads_without_marking_device_unresponsive():
+    from custom_components.flinq_orion.protocol.errors import MeshTimeoutError
+
+    c = SimpleNamespace(
+        entry=SimpleNamespace(options={"transport_mode": "sig", "device_key": "configured"}),
+        capabilities=DeviceCapabilities(),
+        record=Mock(),
+        data={"responsive": True},
+        async_set_updated_data=Mock(),
+    )
+    d = OrionDevice(c)
+    d.ensure_connection = AsyncMock()
+    request = AsyncMock(side_effect=MeshTimeoutError("Unsupported optional query"))
+    d.controller = SimpleNamespace(node=176, request=request)
+    results = await d.discover()
+    assert len(results) == 7
+    for call in request.await_args_list:
+        assert call.kwargs["timeout"] == 2
+        assert call.kwargs["retries"] == 0
+    assert c.data == {"responsive": True}
+    c.async_set_updated_data.assert_not_called()

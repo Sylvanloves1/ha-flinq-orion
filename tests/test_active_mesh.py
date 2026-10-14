@@ -233,3 +233,15 @@ async def test_device_key_transport():
     lower = lower_segments(encrypted, DEV, 5, device=True)[0]
     assert receiver.receive(NetworkMessage(codec.nid, 0, False, 5, 5, 1, 176, lower)) == payload
     assert receiver.last_completed == (5, True)
+
+
+@pytest.mark.asyncio
+async def test_empty_vendor_report_is_a_response_not_a_timeout():
+    peer, controller, device, allocator, replay = await make_system()
+    peer.dps = {}
+    response = await device.query()
+    assert response.access.payload == b"\x01"
+    assert len([msg for msg in peer.received if not msg.ctl]) == 1
+    assert not device.supports_power
+    assert device.coordinator.record.call_args.args[0]["result"] == "empty_dp_report"
+    await peer.finish()

@@ -150,7 +150,8 @@ class OrionLight(OrionEntity, LightEntity):
                 and not (self.color_mode == ColorMode.HS and self.device.supports_color)
             ):
                 raise HomeAssistantError("Brightness capability unavailable")
-            await self.device.set_power(True)
+            if not kwargs or self.is_on is not True or not self.coordinator.data.get("connected"):
+                await self.device.set_power(True)
             if ATTR_COLOR_TEMP_KELVIN in kwargs:
                 await self.device.select_light_mode("white")
                 await self.device.set_temperature(kwargs[ATTR_COLOR_TEMP_KELVIN])

@@ -144,3 +144,6 @@ async def test_brightness_preserves_color_mode():
     await light.async_turn_on(brightness=100)
     c.device.set_color.assert_awaited_once_with((120, 100), 100)
     c.device.set_brightness.assert_not_awaited()
+    c.device.set_power.assert_not_awaited()
+    await light.async_turn_on()
+    c.device.set_power.assert_awaited_once_with(True)

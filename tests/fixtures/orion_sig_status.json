@@ -1,0 +1,21 @@
+{
+  "reports": [
+    {
+      "opcode": 33284,
+      "payload": "010100"
+    },
+    {
+      "opcode": 33358,
+      "payload": "9999999901"
+    },
+    {
+      "opcode": 33382,
+      "payload": "202100002021000000"
+    },
+    {
+      "opcode": 33400,
+      "payload": "cc4c0000ffff84"
+    }
+  ],
+  "range_response_received": false
+}

@@ -1,6 +1,6 @@
 # FlinQ Orion FQC8274 — experimental local integration
 
-Version **0.2.1** is a new independent Home Assistant custom integration, not a fork or wrapper. It includes an active local Tuya SIG Mesh client through Home Assistant's Bluetooth stack and ESPHome Bluetooth Proxies. **The code is tested offline; physical Orion firmware compatibility remains unverified.** Selecting a protocol enables an experiment, not a claim that all FQC8274 features work.
+Version **0.2.2** is a new independent Home Assistant custom integration, not a fork or wrapper. It includes an active local Tuya SIG Mesh client through Home Assistant's Bluetooth stack and ESPHome Bluetooth Proxies. **Local SIG power control has been confirmed on the Orion; other features still require physical verification.** Selecting a protocol enables an experiment, not a claim that all FQC8274 features work.
 
 Implemented:
 

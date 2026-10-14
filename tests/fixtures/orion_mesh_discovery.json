@@ -1,0 +1,45 @@
+{
+  "composition": {
+    "company_id": 2000,
+    "product_id": 768,
+    "version_id": 12597,
+    "replay_capacity": 105,
+    "features": 7,
+    "elements": [
+      {
+        "location": 0,
+        "sig_models": [
+          0,
+          2,
+          3,
+          4611,
+          4612,
+          4096,
+          4864,
+          4865,
+          4867,
+          4868,
+          4870,
+          4871,
+          4872,
+          4874,
+          4875
+        ],
+        "vendor_models": [
+          [
+            2000,
+            4
+          ]
+        ]
+      }
+    ]
+  },
+  "vendor_report": {
+    "opcode": 205,
+    "company": 2000,
+    "payload": "01"
+  },
+  "beacon_authenticated": true,
+  "iv_index": 0,
+  "nid": 51
+}

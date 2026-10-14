@@ -184,7 +184,9 @@ class MeshController:
         finally:
             self.tx_segments = None
 
-    async def request(self, payload, matcher, *, device=False, retries=0, destination=None):
+    async def request(
+        self, payload, matcher, *, device=False, retries=0, destination=None, timeout=15
+    ):
         # Both the key choice and request/response matching are serialized.
         async with self.request_lock:
             self.destination = destination or self.node
@@ -194,7 +196,7 @@ class MeshController:
             self.device_command = device
             try:
                 return await self.channel.request(
-                    payload, matcher, timeout=15, retries=retries, idempotent=bool(retries)
+                    payload, matcher, timeout=timeout, retries=retries, idempotent=bool(retries)
                 )
             finally:
                 self.device_command = False

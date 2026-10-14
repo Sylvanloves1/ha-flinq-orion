@@ -182,6 +182,8 @@ class OrionDevice:
         retries=0,
         model=None,
         access_match=None,
+        timeout=15,
+        discovery=False,
     ):
         if not self.ensure_connection or self.mode == "observe":
             raise MeshError("Configure existing mesh keys and a unique source address first")
@@ -211,7 +213,12 @@ class OrionDevice:
 
         try:
             response = await controller.request(
-                payload, matches, device=device, retries=retries, destination=destination
+                payload,
+                matches,
+                device=device,
+                retries=retries,
+                destination=destination,
+                timeout=timeout,
             )
             self.coordinator.record(
                 {
@@ -225,6 +232,8 @@ class OrionDevice:
             )
             return response
         except MeshTimeoutError:
+            if discovery:
+                raise
             self.coordinator.data["command_failures"] = (
                 self.coordinator.data.get("command_failures", 0) + 1
             )
@@ -233,72 +242,84 @@ class OrionDevice:
             self.coordinator.async_set_updated_data(dict(self.coordinator.data))
             raise
 
-    async def query(self, ids=(0,)):
-        return await self._request(
-            query(tuple(ids)),
+    async def query(self, ids=(0,), *, discovery=False):
+        ids = tuple(ids)
+        response = await self._request(
+            query(ids),
             DATA,
             COMPANY_ID,
             model=4,
             dp_match=lambda reports: (
-                bool(reports)
-                if tuple(ids) == (0,)
-                else all(any(dp.id == i for dp in reports) for i in ids)
+                ids == (0,)
+                or not reports
+                or all(any(dp.id == identifier for dp in reports) for identifier in ids)
             ),
-            retries=1,
+            retries=0 if discovery else 1,
+            timeout=2 if discovery else 15,
+            discovery=discovery,
         )
+        reports = decode_report(response.access.payload)
+        self.coordinator.record(
+            {
+                "kind": "query_result",
+                "requested_dps": list(ids),
+                "reported_dps": [dp.id for dp in reports],
+                "result": "dp_report" if reports else "empty_dp_report",
+            }
+        )
+        return response
 
     async def discover(self):
         if self.mode == "observe":
             raise MeshError("Discovery queries require configured existing mesh")
+
+        async def request(*args, **kwargs):
+            kwargs.update(timeout=2, retries=0, discovery=True)
+            return await self._request(*args, **kwargs)
+
         results = {}
         requests: list[tuple[str, Callable[[], Awaitable[Any]]]] = []
         if self.options.get("device_key"):
             requests.append(
                 (
                     "composition",
-                    lambda: self._request(bytes.fromhex("800800"), 2, device=True, retries=1),
+                    lambda: request(bytes.fromhex("800800"), 2, device=True, retries=1),
                 )
             )
-        requests.append(("vendor_status", lambda: self.query()))
+        requests.append(("vendor_status", lambda: self.query(discovery=True)))
         if self.mode == "sig":
             requests.extend(
                 [
                     (
                         "power",
-                        lambda: self._request(
-                            bytes.fromhex("8201"), 0x8204, retries=1, model=0x1000
-                        ),
+                        lambda: request(bytes.fromhex("8201"), 0x8204, retries=1, model=0x1000),
                     ),
                     (
                         "brightness",
-                        lambda: self._request(
-                            bytes.fromhex("824b"), 0x824E, retries=1, model=0x1300
-                        ),
+                        lambda: request(bytes.fromhex("824b"), 0x824E, retries=1, model=0x1300),
                     ),
                     (
                         "temperature_range",
-                        lambda: self._request(
-                            bytes.fromhex("8262"), 0x8263, retries=1, model=0x1303
-                        ),
+                        lambda: request(bytes.fromhex("8262"), 0x8263, retries=1, model=0x1303),
                     ),
                     (
                         "temperature",
-                        lambda: self._request(
-                            bytes.fromhex("8261"), 0x8266, retries=1, model=0x1306
-                        ),
+                        lambda: request(bytes.fromhex("8261"), 0x8266, retries=1, model=0x1306),
                     ),
                     (
                         "hsl",
-                        lambda: self._request(
-                            bytes.fromhex("826d"), 0x8278, retries=1, model=0x1307
-                        ),
+                        lambda: request(bytes.fromhex("826d"), 0x8278, retries=1, model=0x1307),
                     ),
                 ]
             )
-        for name, request in requests:
+        for name, perform_request in requests:
             try:
-                await request()
-                results[name] = "response_received"
+                response = await perform_request()
+                results[name] = (
+                    "empty_dp_report"
+                    if name == "vendor_status" and not decode_report(response.access.payload)
+                    else "response_received"
+                )
             except MeshError as err:
                 results[name] = type(err).__name__
         self.coordinator.record({"kind": "discovery", "results": results})
@@ -354,7 +375,7 @@ class OrionDevice:
             raise MeshError("No observed power capability")
         if self.mode == "vendor_dp":
             return await self.write_dp(DP(1, 1, bytes((bool(on),))))
-        payload = bytes.fromhex("8202") + bytes((bool(on), await self.next_tid()))
+        payload = bytes.fromhex("8202") + bytes((bool(on), await self.next_tid(), 0, 0))
         return await self._request(
             payload,
             0x8204,
@@ -373,7 +394,9 @@ class OrionDevice:
             return await self.write_dp(DP(3, 2, brightness_to_tuya(value).to_bytes(4, "big")))
         level = (max(0, min(255, value)) * 65535 + 127) // 255
         return await self._request(
-            bytes.fromhex("824c") + level.to_bytes(2, "little") + bytes((await self.next_tid(),)),
+            bytes.fromhex("824c")
+            + level.to_bytes(2, "little")
+            + bytes((await self.next_tid(), 0, 0)),
             0x824E,
             model=0x1300,
             access_match=lambda data: (
@@ -394,7 +417,7 @@ class OrionDevice:
             bytes.fromhex("8264")
             + kelvin.to_bytes(2, "little")
             + bytes(2)
-            + bytes((await self.next_tid(),)),
+            + bytes((await self.next_tid(), 0, 0)),
             0x8266,
             model=0x1306,
             access_match=lambda data: (
@@ -424,7 +447,7 @@ class OrionDevice:
         return await self._request(
             bytes.fromhex("8276")
             + b"".join(n.to_bytes(2, "little") for n in values)
-            + bytes((await self.next_tid(),)),
+            + bytes((await self.next_tid(), 0, 0)),
             0x8278,
             model=0x1307,
             access_match=lambda data: (
