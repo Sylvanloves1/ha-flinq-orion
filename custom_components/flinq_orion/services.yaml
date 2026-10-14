@@ -2,10 +2,11 @@ capture:
   name: Capture Bluetooth diagnostics
   description: Inspect GATT and receive notifications. An active mesh session also configures its proxy filter; no DP writes or provisioning occur.
   fields:
-    entry_id:
+    device_id:
+      name: Lamp
       required: true
       selector:
-        config_entry:
+        device:
           integration: flinq_orion
     seconds:
       default: 20
@@ -18,10 +19,11 @@ query_status:
   name: Discover capabilities and query status
   description: Read status for the selected protocol. Optional protocol discovery can disconnect this firmware; enable it only for a controlled experiment.
   fields:
-    entry_id:
+    device_id:
+      name: Lamp
       required: true
       selector:
-        config_entry:
+        device:
           integration: flinq_orion
     include_optional:
       name: Include experimental protocol discovery
@@ -33,10 +35,11 @@ query_dp:
   name: Query a data point
   description: Read one Tuya data point without changing its value.
   fields:
-    entry_id:
+    device_id:
+      name: Lamp
       required: true
       selector:
-        config_entry:
+        device:
           integration: flinq_orion
     dp_id:
       required: true
@@ -49,19 +52,21 @@ dump_capabilities:
   name: Return discovered capabilities
   description: Return observed models, decoded data points and captured scene/mode values. Does not contact the lamp.
   fields:
-    entry_id:
+    device_id:
+      name: Lamp
       required: true
       selector:
-        config_entry:
+        device:
           integration: flinq_orion
 bind_vendor_model:
-  name: Advanced — bind existing AppKey to Tuya vendor model
+  name: Advanced: bind existing AppKey to Tuya vendor model
   description: Explicit configuration write, requiring the existing DeviceKey and AppKey index. Adds a model binding; never resets or provisions the lamp.
   fields:
-    entry_id:
+    device_id:
+      name: Lamp
       required: true
       selector:
-        config_entry:
+        device:
           integration: flinq_orion
     app_key_index:
       required: true
@@ -78,10 +83,11 @@ probe_link:
   name: Probe link stability
   description: Send one read-only status request per interval and record how long each Bluetooth link carries responses. Reconnects through the normal path; no state is changed.
   fields:
-    entry_id:
+    device_id:
+      name: Lamp
       required: true
       selector:
-        config_entry:
+        device:
           integration: flinq_orion
     seconds:
       default: 120

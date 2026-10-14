@@ -1,22 +1,37 @@
-"""UI onboarding for observation or an existing, non-destructively joined mesh."""
+"""UI onboarding: a mesh network entry with one subentry per lamp (D-014, D-015).
 
+No provisioning or reset: lamps join with the keys of an existing mesh network.
+"""
+
+from hmac import compare_digest
 import re
+from types import MappingProxyType
 from typing import Any, cast
 from homeassistant import config_entries
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
-from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlowResult,
+    ConfigSubentry,
+    ConfigSubentryData,
+    SubentryFlowResult,
+)
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 import voluptuous as vol
-from .const import DOMAIN, NAME, TARGET_ADDRESS
+from .const import DEFAULT_LAMP_NAME, DOMAIN, NETWORK_TITLE, PROXY_SERVICE, SUBENTRY_LAMP
 from .credential_import import (
+    PROVIDER_DOMAIN,
     matching_entries,
     import_credentials,
     verify_network_evidence,
     CredentialImportError,
 )
+from .protocol.advertisements import identity_material
 
+MAC_ADDRESS = re.compile(r"(?:[0-9A-F]{2}:){5}[0-9A-F]{2}")
+HEX_KEY = re.compile(r"[0-9a-fA-F]{32}")
 
 # Replaced by the Tuya schema (DP 2 enum indices, DP 7 in seconds), see D-011.
 SUPERSEDED_OPTIONS = (
@@ -26,36 +41,196 @@ SUPERSEDED_OPTIONS = (
     "countdown_seconds_confirmed",
     "countdown_max_seconds",
 )
+# Per lamp since 0.4.0: stored in the lamp subentry, not in the network options.
+LAMP_OPTIONS = ("device_key", "node_address")
+
+
+def lamp_subentries(entry: ConfigEntry) -> dict[str, ConfigSubentry]:
+    return {
+        subentry_id: subentry
+        for subentry_id, subentry in entry.subentries.items()
+        if subentry.subentry_type == SUBENTRY_LAMP
+    }
+
+
+def configured_lamp(hass, address: str) -> ConfigEntry | None:
+    """The network entry that already holds this lamp."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        addresses = {subentry.data.get("address") for subentry in entry.subentries.values()}
+        addresses.add(entry.data.get("address"))  # version 1 entry, not migrated yet
+        if address in addresses:
+            return entry
+    return None
+
+
+def tuya_entries(hass, address: str):
+    return matching_entries(hass.config_entries.async_entries(PROVIDER_DOMAIN), address)
+
+
+def is_network_id(proxy_data, net_key: str) -> bool:
+    return bool(
+        proxy_data
+        and len(proxy_data) == 9
+        and proxy_data[0] == 0
+        and compare_digest(proxy_data[1:], identity_material(bytes.fromhex(net_key))[0])
+    )
+
+
+def network_for(hass, address: str, service_data) -> ConfigEntry | None:
+    """Configured network of a lamp: from its Network ID, or from a tuya_ble_mesh entry.
+
+    A lamp in its low-power cycle advertises only Node Identity, which needs the unknown
+    mesh address; the tuya_ble_mesh entry then still identifies the network.
+    """
+    proxy = service_data.get(PROXY_SERVICE)
+    imported = {
+        str({**entry.data, **entry.options}.get("net_key", "")).lower()
+        for entry in tuya_entries(hass, address)
+    }
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        net_key = entry.options.get("net_key")
+        if net_key and (net_key.lower() in imported or is_network_id(proxy, net_key)):
+            return entry
+    return None
+
+
+def lamp_data(hass, network: ConfigEntry | None, address: str) -> dict[str, Any]:
+    """Subentry data. The mesh address is detected on the first connection, unless
+    tuya_ble_mesh holds this lamp in the same network: then its address and DeviceKey are used.
+    """
+    data: dict[str, Any] = {"address": address, "node_address": None}
+    net_key = str(network.options.get("net_key", "")).lower() if network else ""
+    for entry in tuya_entries(hass, address):
+        try:
+            credentials, _ = import_credentials(entry, address)
+        except CredentialImportError:
+            continue
+        if net_key and credentials["net_key"] == net_key:
+            data["node_address"] = credentials["node_address"]
+            if credentials["device_key"]:
+                data["device_key"] = credentials["device_key"]
+            break
+    return data
+
+
+def nearby_lamps(hass, network: ConfigEntry) -> dict[str, str]:
+    """Unconfigured mesh proxies nearby, with the lamps of this network first."""
+    net_key = network.options.get("net_key")
+    matched, unverified = {}, {}
+    for info in bluetooth.async_discovered_service_info(hass, connectable=False):
+        address = info.address.upper()
+        proxy = info.service_data.get(PROXY_SERVICE)
+        if not proxy or configured_lamp(hass, address):
+            continue
+        if net_key and is_network_id(proxy, net_key):
+            matched[address] = f"{address} ({info.rssi} dBm, this network)"
+        else:
+            unverified[address] = f"{address} ({info.rssi} dBm, network not verified)"
+    return {**matched, **unverified}
+
+
+def lamp_name(user_input) -> str:
+    return str(user_input.get("name", "")).strip() or DEFAULT_LAMP_NAME
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    VERSION = 1
-    _address = TARGET_ADDRESS
+    VERSION = 2
+    _address: str | None = None
+    _network: ConfigEntry | None = None
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(cls, config_entry):
+        return {SUBENTRY_LAMP: LampFlow}
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
     ) -> ConfigFlowResult:
-        if discovery_info.address.upper() != TARGET_ADDRESS:
-            return self.async_abort(reason="not_orion")
-        self._address = discovery_info.address.upper()
-        await self.async_set_unique_id(self._address)
+        """Offer only lamps that are identified: of a configured network, or held by
+        tuya_ble_mesh when no network is configured yet (D-015)."""
+        address = discovery_info.address.upper()
+        await self.async_set_unique_id(address)
         self._abort_if_unique_id_configured()
+        if configured_lamp(self.hass, address):
+            return self.async_abort(reason="already_configured")
+        self._address = address
+        self.context["title_placeholders"] = {"name": address}
+        network = network_for(self.hass, address, discovery_info.service_data)
+        if network is not None:
+            self._network = network
+            return await self.async_step_add_lamp()
+        if self._async_current_entries(include_ignore=False):
+            return self.async_abort(reason="not_in_network")
+        if not tuya_entries(self.hass, address):
+            return self.async_abort(reason="not_identified")
         return await self.async_step_user()
+
+    async def async_step_add_lamp(self, user_input=None) -> ConfigFlowResult:
+        network, address = self._network, self._address
+        assert network is not None and address is not None
+        if user_input is not None:
+            if configured_lamp(self.hass, address):
+                return self.async_abort(reason="already_configured")
+            self.hass.config_entries.async_add_subentry(
+                network,
+                ConfigSubentry(
+                    data=MappingProxyType(lamp_data(self.hass, network, address)),
+                    subentry_type=SUBENTRY_LAMP,
+                    title=lamp_name(user_input),
+                    unique_id=address,
+                ),
+            )
+            return self.async_abort(
+                reason="lamp_added", description_placeholders={"network": network.title}
+            )
+        return self.async_show_form(
+            step_id="add_lamp",
+            data_schema=cast(
+                Any, vol.Schema({vol.Required("name", default=DEFAULT_LAMP_NAME): str})
+            ),
+            description_placeholders={"address": address, "network": network.title},
+        )
 
     async def async_step_user(self, user_input=None) -> ConfigFlowResult:
         errors = {}
         if user_input is not None:
-            address = user_input["address"].upper()
-            if not re.fullmatch(r"(?:[0-9A-F]{2}:){5}[0-9A-F]{2}", address):
+            address = str(user_input["address"]).strip().upper()
+            if not MAC_ADDRESS.fullmatch(address):
                 errors["address"] = "invalid_address"
+            elif configured_lamp(self.hass, address):
+                return self.async_abort(reason="already_configured")
             else:
+                self._address = address
+                info = bluetooth.async_last_service_info(self.hass, address, connectable=False)
+                network = network_for(self.hass, address, info.service_data if info else {})
+                if network is not None:
+                    # A lamp of a configured network joins it; one entry per network.
+                    self._network = network
+                    return await self.async_step_add_lamp(user_input)
                 await self.async_set_unique_id(address)
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=NAME, data={"address": address})
+                return self.async_create_entry(
+                    title=NETWORK_TITLE,
+                    data={},
+                    subentries=[
+                        ConfigSubentryData(
+                            data=lamp_data(self.hass, None, address),
+                            subentry_type=SUBENTRY_LAMP,
+                            title=lamp_name(user_input),
+                            unique_id=address,
+                        )
+                    ],
+                )
         return self.async_show_form(
             step_id="user",
             data_schema=cast(
-                Any, vol.Schema({vol.Required("address", default=self._address): str})
+                Any,
+                vol.Schema(
+                    {
+                        vol.Required("address", default=self._address or ""): str,
+                        vol.Required("name", default=DEFAULT_LAMP_NAME): str,
+                    }
+                ),
             ),
             errors=errors,
         )
@@ -66,41 +241,139 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return OptionsFlow()
 
 
+class LampFlow(config_entries.ConfigSubentryFlow):
+    """Add a lamp of this network, or change its name, mesh address or DeviceKey."""
+
+    async def async_step_user(self, user_input=None) -> SubentryFlowResult:
+        network = self._get_entry()
+        errors = {}
+        if user_input is not None:
+            address = str(user_input["address"]).strip().upper()
+            if not MAC_ADDRESS.fullmatch(address):
+                errors["address"] = "invalid_address"
+            elif configured_lamp(self.hass, address):
+                errors["address"] = "lamp_configured"
+            else:
+                return self.async_create_entry(
+                    title=lamp_name(user_input),
+                    data=lamp_data(self.hass, network, address),
+                    unique_id=address,
+                )
+        nearby = nearby_lamps(self.hass, network)
+        address_field: Any = str
+        if nearby:
+            address_field = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=address, label=label)
+                        for address, label in nearby.items()
+                    ],
+                    custom_value=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        return self.async_show_form(
+            step_id="user",
+            data_schema=cast(
+                Any,
+                vol.Schema(
+                    {
+                        vol.Required("address"): address_field,
+                        vol.Required("name", default=DEFAULT_LAMP_NAME): str,
+                    }
+                ),
+            ),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(self, user_input=None) -> SubentryFlowResult:
+        network = self._get_entry()
+        subentry = self._get_reconfigure_subentry()
+        errors = {}
+        if user_input is not None:
+            device_key = str(user_input.get("device_key", "")).strip().lower()
+            node = user_input.get("node_address") or None
+            if device_key and (not HEX_KEY.fullmatch(device_key) or device_key == "0" * 32):
+                errors["device_key"] = "invalid_key"
+            if node is not None and node == network.options.get("source_address"):
+                errors["node_address"] = "invalid_node"
+            if not errors:
+                data = {**subentry.data, "node_address": node}
+                data.pop("device_key", None)
+                if device_key:
+                    data["device_key"] = device_key
+                node_changed = node != subentry.data.get("node_address")
+                result = self.async_update_and_abort(
+                    network, subentry, title=lamp_name(user_input), data=data
+                )
+                if node_changed:
+                    # The update listener skips address changes (detection needs no reload).
+                    self.hass.config_entries.async_schedule_reload(network.entry_id)
+                return result
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=cast(
+                Any,
+                vol.Schema(
+                    {
+                        vol.Required("name", default=subentry.title): str,
+                        vol.Optional(
+                            "node_address", default=subentry.data.get("node_address") or 0
+                        ): vol.All(vol.Coerce(int), vol.Range(min=0, max=0x7FFF)),
+                        vol.Optional(
+                            "device_key", default=subentry.data.get("device_key", "")
+                        ): selector.TextSelector(
+                            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                        ),
+                    }
+                ),
+            ),
+            errors=errors,
+        )
+
+
 class OptionsFlow(config_entries.OptionsFlow):
+    """Network settings: keys, controller address, protocol and connection mode."""
+
     _mesh: dict | None = None
     _import_defaults: dict | None = None
     _previous_source: int | None = None
+    # (subentry ID, mesh address and DeviceKey) of the lamp whose credentials were imported.
+    _lamp_import: tuple[str, dict] | None = None
+
+    def _lamps(self):
+        return lamp_subentries(self.config_entry)
 
     async def async_step_init(self, user_input=None):
         errors = {}
         old = {**self.config_entry.options, **(self._import_defaults or {})}
-        candidates = matching_entries(
-            self.hass.config_entries.async_entries("tuya_ble_mesh"),
-            self.config_entry.data["address"],
-        )
+        lamps = self._lamps()
+        providers = self.hass.config_entries.async_entries(PROVIDER_DOMAIN)
+        candidates: dict[str, tuple[ConfigEntry, str]] = {}
+        for subentry_id, subentry in lamps.items():
+            for entry in matching_entries(providers, subentry.data["address"]):
+                candidates.setdefault(entry.entry_id, (entry, subentry_id))
         if user_input is not None and user_input.get("import_entry_id"):
-            selected = next(
-                (entry for entry in candidates if entry.entry_id == user_input["import_entry_id"]),
-                None,
-            )
+            selected = candidates.get(user_input["import_entry_id"])
             if selected is None:
                 errors["base"] = "import_wrong_device"
             else:
+                entry, subentry_id = selected
+                address = lamps[subentry_id].data["address"]
+                runtime = getattr(self.config_entry, "runtime_data", None)
+                lamp = runtime.lamps.get(subentry_id) if runtime is not None else None
                 try:
-                    credentials, previous_source = import_credentials(
-                        selected, self.config_entry.data["address"]
-                    )
-                    info = bluetooth.async_last_service_info(
-                        self.hass, self.config_entry.data["address"], connectable=False
-                    )
-                    runtime = getattr(self.config_entry, "runtime_data", None)
-                    records = list(runtime.coordinator.records) if runtime is not None else []
+                    credentials, previous_source = import_credentials(entry, address)
+                    info = bluetooth.async_last_service_info(self.hass, address, connectable=False)
+                    records = list(lamp.coordinator.records) if lamp is not None else []
                     verified = verify_network_evidence(
                         credentials, info.service_data if info else {}, records
                     )
                 except CredentialImportError as err:
                     errors["base"] = err.reason
                 else:
+                    lamp_values = {key: credentials.pop(key) for key in LAMP_OPTIONS}
+                    self._lamp_import = subentry_id, lamp_values
                     self._import_defaults = {
                         **credentials,
                         "transport_mode": "query_only",
@@ -109,8 +382,8 @@ class OptionsFlow(config_entries.OptionsFlow):
                         "imported_source_address": previous_source,
                     }
                     self._previous_source = previous_source
-                    if runtime is not None:
-                        runtime.coordinator.record(
+                    if lamp is not None:
+                        lamp.coordinator.record(
                             {
                                 "kind": "credential_import",
                                 "network_identity_verified": verified,
@@ -122,21 +395,31 @@ class OptionsFlow(config_entries.OptionsFlow):
             user_input = {
                 key: value for key, value in user_input.items() if key != "import_entry_id"
             }
-            for key in ("net_key", "app_key", "device_key"):
+            for key in ("net_key", "app_key"):
                 value = user_input.get(key, "").strip()
                 user_input[key] = value
-                if value and (not re.fullmatch(r"[0-9a-fA-F]{32}", value) or value == "0" * 32):
+                if value and (not HEX_KEY.fullmatch(value) or value == "0" * 32):
                     errors[key] = "invalid_key"
             if bool(user_input.get("net_key")) != bool(user_input.get("app_key")):
                 errors["base"] = "both_keys"
+            for entry in self.hass.config_entries.async_entries(DOMAIN):
+                if (
+                    entry.entry_id != self.config_entry.entry_id
+                    and user_input.get("net_key")
+                    and entry.options.get("net_key", "").lower() == user_input["net_key"].lower()
+                ):
+                    errors["net_key"] = "network_in_use"
             mode = user_input.get("transport_mode", "observe")
             if mode != "observe":
                 if not user_input.get("net_key") or not user_input.get("app_key"):
                     errors["base"] = "keys_required"
                 source = user_input.get("source_address", 0)
+                nodes = {subentry.data.get("node_address") for subentry in lamps.values()}
+                if self._lamp_import:
+                    nodes.add(self._lamp_import[1]["node_address"])
                 if (
                     not 1 <= source <= 0x7FFF
-                    or source == user_input.get("node_address")
+                    or source in nodes
                     or source == self._previous_source
                     or source == old.get("imported_source_address")
                 ):
@@ -148,15 +431,6 @@ class OptionsFlow(config_entries.OptionsFlow):
                 ):
                     if not user_input.get("new_source_confirmed"):
                         errors["new_source_confirmed"] = "confirm_unique_source"
-                for entry in self.hass.config_entries.async_entries(DOMAIN):
-                    if (
-                        entry.entry_id != self.config_entry.entry_id
-                        and entry.options.get("transport_mode", "observe") != "observe"
-                        and entry.options.get("net_key", "").lower()
-                        == user_input.get("net_key", "").lower()
-                        and entry.options.get("source_address") == source
-                    ):
-                        errors["source_address"] = "source_in_use"
             if not errors:
                 self._mesh = {**old, **user_input}
                 return await self.async_step_profile()
@@ -167,7 +441,7 @@ class OptionsFlow(config_entries.OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Optional("import_entry_id", default=""): vol.In(
-                    {"": "—", **{entry.entry_id: entry.title for entry in candidates}}
+                    {"": "-", **{key: entry.title for key, (entry, _) in candidates.items()}}
                 ),
                 vol.Required(
                     "transport_mode", default=old.get("transport_mode", "observe")
@@ -181,14 +455,8 @@ class OptionsFlow(config_entries.OptionsFlow):
                 optional("app_key", ""): selector.TextSelector(
                     selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
                 ),
-                optional("device_key", ""): selector.TextSelector(
-                    selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
-                ),
                 optional("source_address", 0): vol.All(
                     vol.Coerce(int), vol.Range(min=0, max=0x7FFF)
-                ),
-                optional("node_address", 0x00B0): vol.All(
-                    vol.Coerce(int), vol.Range(min=1, max=0x7FFF)
                 ),
                 optional("new_source_confirmed", False): bool,
                 optional("iv_index", 0): vol.All(vol.Coerce(int), vol.Range(min=0, max=0xFFFFFFFF)),
@@ -203,7 +471,7 @@ class OptionsFlow(config_entries.OptionsFlow):
             errors=errors,
             description_placeholders={
                 "previous_source": str(
-                    self._previous_source or old.get("imported_source_address") or "—"
+                    self._previous_source or old.get("imported_source_address") or "-"
                 )
             },
         )
@@ -222,8 +490,9 @@ class OptionsFlow(config_entries.OptionsFlow):
                 errors["base"] = "invalid_ct_range"
             if not errors:
                 data = {**old, **user_input}
-                for superseded in SUPERSEDED_OPTIONS:
+                for superseded in (*SUPERSEDED_OPTIONS, *LAMP_OPTIONS):
                     data.pop(superseded, None)
+                self._store_lamp_import()
                 return self.async_create_entry(title="", data=data)
 
         def optional(name, default):
@@ -249,3 +518,17 @@ class OptionsFlow(config_entries.OptionsFlow):
             ),
             errors=errors,
         )
+
+    def _store_lamp_import(self):
+        """Write the imported mesh address and DeviceKey into the lamp subentry."""
+        if not self._lamp_import:
+            return
+        subentry_id, values = self._lamp_import
+        subentry = self._lamps().get(subentry_id)
+        if subentry is None:
+            return
+        data = {**subentry.data, "node_address": values["node_address"]}
+        data.pop("device_key", None)
+        if values.get("device_key"):
+            data["device_key"] = values["device_key"]
+        self.hass.config_entries.async_update_subentry(self.config_entry, subentry, data=data)

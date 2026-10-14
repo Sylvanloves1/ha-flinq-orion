@@ -11,19 +11,21 @@ from homeassistant.components.light import (
     ATTR_EFFECT,
 )
 from homeassistant.exceptions import HomeAssistantError
-from .entity import OrionEntity, add_when_supported
+from .entity import OrionEntity, add_when_supported, lamps
 from .protocol.conversions import brightness_to_ha, decode_hsv_string
 from .protocol.errors import FlinqOrionError
 from .protocol.vendor_tuya import DP
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    c = entry.runtime_data.coordinator
-    add_when_supported(
-        entry,
-        async_add_entities,
-        lambda: [("light", c.device.supports_power, lambda: OrionLight(c))],
-    )
+    for subentry_id, c in lamps(entry):
+        add_when_supported(
+            entry,
+            subentry_id,
+            c,
+            async_add_entities,
+            lambda c=c: [("light", c.device.supports_power, lambda: OrionLight(c))],
+        )
 
 
 class OrionLight(OrionEntity, LightEntity):

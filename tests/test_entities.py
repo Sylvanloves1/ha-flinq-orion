@@ -47,9 +47,18 @@ async def report(device, *dps):
 @pytest.mark.asyncio
 async def test_light_created_after_observation_once_and_unknowns_stay_diagnostics():
     c = Coordinator()
-    entry = SimpleNamespace(runtime_data=SimpleNamespace(coordinator=c), async_on_unload=Mock())
+    entry = SimpleNamespace(
+        runtime_data=SimpleNamespace(lamps={"lamp": SimpleNamespace(coordinator=c)}),
+        async_on_unload=Mock(),
+    )
     entities = []
-    await async_setup_entry(None, entry, entities.extend)
+    subentries = []
+
+    def add(new, config_subentry_id=None):
+        entities.extend(new)
+        subentries.append(config_subentry_id)
+
+    await async_setup_entry(None, entry, add)
     assert not entities
     await report(c.device, DP(54, 2, (30).to_bytes(4, "big")))
     assert not entities
@@ -62,6 +71,7 @@ async def test_light_created_after_observation_once_and_unknowns_stay_diagnostic
     assert len(entities) == 1
     assert light.supported_color_modes == {ColorMode.BRIGHTNESS}
     assert light.brightness == 191
+    assert subentries == ["lamp"]
 
 
 @pytest.mark.asyncio

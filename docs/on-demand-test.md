@@ -1,5 +1,10 @@
 # Test procedure for 0.3.0b1 (on-demand connections)
 
+> Diagnostics layout since 0.4.0: the network entry diagnostics hold the link records under
+> `data.network` (`connection_history`, `packets`) and one block per lamp under `data.lamps`
+> (`state`, `connection_history`). The device diagnostics of a lamp hold the same lamp block
+> under `data.lamp`. Read the paths below in that structure.
+
 This prerelease is a test build. One successful run is one observation, not a validated
 release.
 

@@ -8,7 +8,7 @@ from custom_components.flinq_orion.credential_import import (
     CredentialImportError,
 )
 from custom_components.flinq_orion.protocol.crypto import k3, k1, s1, aes_block, cmac
-from test_options import flow, inputs
+from test_options import flow, inputs, lamp
 
 ADDRESS = "DC:23:4F:6E:A0:12"
 NET = "7dd7364cd842ad18c17c2b820c84c3d6"
@@ -86,14 +86,11 @@ def test_beacon_authentication_and_iv_mismatch():
 
 @pytest.mark.asyncio
 async def test_options_import_prefills_password_fields_without_creating_entry():
-    f = flow()
-    old = legacy()
-    f.hass.config_entries.async_entries.return_value = [old]
-    f.entry = SimpleNamespace(
-        options={},
-        entry_id="target",
-        data={"address": ADDRESS},
-        runtime_data=SimpleNamespace(coordinator=SimpleNamespace(records=[], record=Mock())),
+    f = flow(providers=[legacy()])
+    f.entry.subentries = {"lamp": lamp(node_address=None)}
+    record = Mock()
+    f.entry.runtime_data = SimpleNamespace(
+        lamps={"lamp": SimpleNamespace(coordinator=SimpleNamespace(records=[], record=record))}
     )
     info = SimpleNamespace(service_data={UUID: b"\x00" + k3(bytes.fromhex(NET))})
     with patch(
@@ -105,8 +102,13 @@ async def test_options_import_prefills_password_fields_without_creating_entry():
     assert f._import_defaults["transport_mode"] == "query_only"
     assert f._import_defaults["source_address"] == 0
     assert f._import_defaults["net_key"] == NET
+    assert "node_address" not in f._import_defaults
+    assert "device_key" not in f._import_defaults
     assert f.entry.options == {}
     result = await f.async_step_init(inputs(source_address=1, net_key=NET, app_key=APP))
+    assert result["errors"]["source_address"] == "invalid_source"
+    # The imported lamp address is not free for the controller either.
+    result = await f.async_step_init(inputs(source_address=176, net_key=NET, app_key=APP))
     assert result["errors"]["source_address"] == "invalid_source"
     result = await f.async_step_init(inputs(net_key=NET, app_key=APP))
     assert result["step_id"] == "profile"
@@ -114,5 +116,12 @@ async def test_options_import_prefills_password_fields_without_creating_entry():
     assert result["data"]["source_address"] == 123
     assert result["data"]["imported_source_address"] == 1
     assert "legacy" not in result["data"].values()
-    assert NET not in str(f.entry.runtime_data.coordinator.record.call_args_list)
-    assert APP not in str(f.entry.runtime_data.coordinator.record.call_args_list)
+    assert "device_key" not in result["data"]
+    stored = f.hass.config_entries.async_update_subentry.call_args.kwargs["data"]
+    assert stored == {
+        "address": ADDRESS,
+        "node_address": 176,
+        "device_key": "9d6dd0e96eb25dc19a40ed9914f8f03f",
+    }
+    assert NET not in str(record.call_args_list)
+    assert APP not in str(record.call_args_list)

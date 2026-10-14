@@ -25,6 +25,8 @@ class OrionDevice:
         self.ensure_connection = None
         # Set by the session: any request keeps an on-demand link open for its idle time.
         self.activity: Callable[[], None] | None = None
+        # Set by the session: connect to this lamp directly; False when it already is the proxy.
+        self.reconnect_direct: Callable[[], Awaitable[bool]] | None = None
         self.options = coordinator.entry.options
         self.tid = 0
         self.operation_lock = asyncio.Lock()
@@ -183,7 +185,9 @@ class OrionDevice:
             )
 
     def model_address(self, model, company=None):
-        node = self.options.get("node_address", 0x00B0)
+        node = self.options.get("node_address")
+        if node is None:
+            raise MeshError("The mesh address of this lamp is not known yet")
         if self.composition:
             for index, element in enumerate(self.composition["elements"]):
                 if company is None and model in element["sig_models"]:
@@ -211,10 +215,9 @@ class OrionDevice:
         if not self.ensure_connection or self.mode == "observe":
             raise MeshError("Configure existing mesh keys and a unique source address first")
         await self.ensure_connection()
-        controller = self.controller
-        if controller is None:
+        if self.controller is None:
             raise MeshError("No active mesh connection")
-        destination = self.model_address(model, company) if model is not None else controller.node
+        destination = self.model_address(model, company)
 
         def matches(response):
             if (
@@ -234,8 +237,11 @@ class OrionDevice:
                 return dp_match(reports)
             return True
 
-        try:
-            response = await controller.request(
+        async def send():
+            controller = self.controller
+            if controller is None:
+                raise MeshError("No active mesh connection")
+            return await controller.request(
                 payload,
                 matches,
                 device=device,
@@ -243,6 +249,16 @@ class OrionDevice:
                 destination=destination,
                 timeout=timeout,
             )
+
+        try:
+            try:
+                response = await send()
+            except MeshTimeoutError:
+                # One link serves the whole network (D-015). A lamp that does not answer
+                # through another lamp gets one direct attempt.
+                if not (self.reconnect_direct and await self.reconnect_direct()):
+                    raise
+                response = await send()
             self.coordinator.record(
                 {
                     "kind": "command_result",

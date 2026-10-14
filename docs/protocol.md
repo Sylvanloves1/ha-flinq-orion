@@ -694,3 +694,48 @@ Hypothesis (two of two cases): the lamp publishes its DP report, probably segmen
 another address (for example group 0xD000 or the old controller address), and only
 acknowledges the query to us. Test: a session with the proxy filter set to accept all
 destinations (connection scoped, no change to the lamp configuration).
+
+## How users get the mesh keys (desk research, 2026-10-14)
+
+Desk research only: public source code and Tuya documentation. No login, no test on a lamp.
+
+**`tuya_ble_mesh` makes its own keys.** Repository 11z4t/tuya-ble-mesh, tag v0.38.1
+(commit 4bf7e41). Verified in the source:
+
+- `config_flow_sig.py` creates the NetKey and AppKey with `os.urandom(16)` and provisions the
+  lamp itself over PB-GATT with No OOB. The DeviceKey comes from that provisioning.
+- It stores controller address 0x0001 (`unicast_our`) and lamp address 0x00B0
+  (`unicast_target`) as defaults. These are the values that our import found, so the keys of
+  this lamp were most likely made by `tuya_ble_mesh`, not by Tuya (inference).
+- The code contains no Tuya cloud call and no manual key entry for SIG devices.
+- In v0.38.1 the AppKey Add call uses a wrong method name (`send_config_app_key_add`; the
+  method is `send_config_appkey_add`). A broad `except` hides the error. Pull request #3
+  reports the same bug. How the lamp got its AppKey binding is therefore unknown.
+
+**Tuya cloud.** The SDK that Home Assistant's Tuya integration uses (tuya-device-sharing-sdk
+0.2.15) has no mesh key fields. Tuya's Android Smart App SDK has `SigMeshBean` with
+`getNetWorkkey()` and `getAppkey()`, per home, for apps built on that SDK only. No open-source
+tool was found that reads SIG Mesh keys from the Tuya cloud. Tuya documents that only the node
+and the provisioner know the DeviceKey.
+
+**Provisioning without the Tuya app.** Tuya documents that configuration must finish within
+30 s after provisioning, and that unauthorised devices fail cloud registration (not local
+use). Reports on 2 to 4 other Tuya SIG Mesh devices show local control after provisioning
+with No OOB. None of them is an Orion.
+
+**Unprovisioned UUID (Tuya BLE Mesh specification).** MAC (6 bytes) + mesh category (2 bytes)
++ PID (8 ASCII bytes). For this lamp, bytes 8 to 15 would be `1ajecbtl` (inference, not
+observed). The byte order of the category differs between two Tuya pages.
+
+**Routes for other users.** (1) Provisioning in this integration: factory reset, random keys,
+AppKey Add and model binding within 30 s; the lamp then leaves Smart Life; not tested on the
+Orion. (2) Keep the `tuya_ble_mesh` import and manual entry (current state). (3) An app on the
+Tuya Smart App SDK: high effort, terms unknown, no DeviceKey. (4) The reverse-engineered
+Smart Life API: no known mesh key endpoint; not recommended.
+
+Sources: github.com/11z4t/tuya-ble-mesh (v0.38.1, pull request #3);
+github.com/tuya/tuya-device-sharing-sdk (0.2.15);
+tuya.github.io/tuya-home-android-sdk-api-reference (SigMeshBean);
+developer.tuya.com: meshsig (Ka6km4aeuygxr), mesh provisioning (Kd5wkuunhsjtq), mesh
+capabilities (Kd5wlb84e6c0o), TLSR825x mesh light (Kce4nmogrxe0c), BLE Mesh protocol
+specification (K9ik5884f3in9).

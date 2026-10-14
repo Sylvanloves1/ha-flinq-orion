@@ -1,5 +1,10 @@
 # Link test procedure for 0.2.9b1
 
+> Diagnostics layout since 0.4.0: the network entry diagnostics hold the link records under
+> `data.network` (`connection_history`, `packets`) and one block per lamp under `data.lamps`
+> (`state`, `connection_history`). The device diagnostics of a lamp hold the same lamp block
+> under `data.lamp`. Read the paths below in that structure.
+
 This prerelease is a test build, not a validated fix. Use it for one controlled test.
 The test answers two questions:
 
@@ -67,10 +72,13 @@ Run this action as soon as step 1 gives a match:
 ```yaml
 action: flinq_orion.probe_link
 data:
-  entry_id: 01M4WS80AEVFFKNPA4DWWVWYNK
+  device_id: <device ID of the lamp>
   seconds: 600
   interval: 10
 ```
+
+Before 0.4.0 the action took `entry_id`. Since 0.4.0 it takes the lamp device: select the lamp
+in the action editor to fill in `device_id`.
 
 The probe sends one read-only Generic OnOff Get every 10 seconds for 10 minutes. When the
 link is lost, the next read connects again through the normal path. The probe does not

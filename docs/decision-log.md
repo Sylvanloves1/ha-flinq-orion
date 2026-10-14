@@ -319,3 +319,32 @@ Design consequences, recorded for review (status open):
 
 **Decision.** As above, chosen by Sylvan Loves. Status: settled for the three questions;
 open for the design consequences.
+
+## D-016 Implementation choices in 0.4.0b1 (2026-10-14)
+
+**Context.** While building D-014 and D-015, questions came up that the approved plan did not
+answer. These choices were made during implementation and are recorded for review by the user.
+
+**Considerations.** Mesh proxy service 0x1828 is advertised by every SIG Mesh proxy, of any
+brand, so a lamp cannot be identified by the service alone. In HA 2026.10 a device belongs to
+one subentry; an implicit move logs a deprecation warning and will fail from 2027.8.
+`tuya_ble_mesh` stores the MAC address, the keys and the lamp address of the lamps it holds.
+Measured once with the real HA 2026.10.1 registries (scratch script): when the device moved to
+the subentry first, HA removed both entities that were still in the old subentry; with the
+entities moved first, both kept their entity IDs.
+
+**Options and choices.**
+
+| Question | Options | Choice | Reason |
+|---|---|---|---|
+| Which Bluetooth discoveries to offer | every 0x1827/0x1828 device; only identified lamps | only identified lamps: Network ID of a configured network, or a `tuya_ble_mesh` entry with the same NetKey; with no network configured, a lamp held by `tuya_ble_mesh` | other choice notifies about devices of neighbours |
+| A lamp of a configured network entered in "Add integration" | new network entry; add to the existing network | add to the existing network | one link and one controller identity per network |
+| Two entries with the same NetKey | allow; refuse | refuse (error "network in use") | two controllers would compete for one network |
+| Existing device and entities | let HA move them; move them in the migration | move the entities, then the device, in the migration | no deprecated implicit move; an implicit move would remove entities that are added later, such as the light |
+| Mesh address of the migrated lamp | detect again; keep 176 | keep 176 when keys exist | same behaviour as 0.3; detection corrects a wrong value |
+| Persistent mode, other lamps | no status read; read once through the link | read once through the link | otherwise the state of other lamps stays unknown until they report |
+| Availability through another lamp's link | link means available; only for the lamp that holds it | only for the lamp that holds it | the link does not prove that another lamp is reachable |
+
+**Recommendation.** As chosen above.
+
+**Decision.** Made during implementation; status: open until reviewed by Sylvan Loves.

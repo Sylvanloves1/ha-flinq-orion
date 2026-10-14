@@ -10,7 +10,7 @@ from custom_components.flinq_orion.protocol.access import AccessMessage
 @pytest.mark.asyncio
 async def test_sig_temperature_range_and_set_opcodes():
     c = SimpleNamespace(
-        entry=SimpleNamespace(options={"transport_mode": "sig"}),
+        entry=SimpleNamespace(options={"transport_mode": "sig", "node_address": 176}),
         capabilities=DeviceCapabilities(),
         record=Mock(),
         report_received=Mock(),
@@ -62,7 +62,9 @@ async def test_discovery_bounds_unsupported_reads_without_marking_device_unrespo
     from custom_components.flinq_orion.protocol.errors import MeshTimeoutError
 
     c = SimpleNamespace(
-        entry=SimpleNamespace(options={"transport_mode": "sig", "device_key": "configured"}),
+        entry=SimpleNamespace(
+            options={"transport_mode": "sig", "device_key": "configured", "node_address": 176}
+        ),
         capabilities=DeviceCapabilities(),
         record=Mock(),
         data={"responsive": True},

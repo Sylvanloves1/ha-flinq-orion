@@ -3,26 +3,28 @@
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.exceptions import HomeAssistantError
 from .device_profiles import ORION_DPS
-from .entity import OrionEntity, add_when_supported
+from .entity import OrionEntity, add_when_supported, lamps
 from .protocol.errors import FlinqOrionError
 
 SWITCHES = (56,)
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    c = entry.runtime_data.coordinator
-    add_when_supported(
-        entry,
-        async_add_entities,
-        lambda: [
-            (
-                ORION_DPS[identifier].code,
-                c.device.supports_settings,
-                lambda identifier=identifier: OrionSettingSwitch(c, identifier),
-            )
-            for identifier in SWITCHES
-        ],
-    )
+    for subentry_id, c in lamps(entry):
+        add_when_supported(
+            entry,
+            subentry_id,
+            c,
+            async_add_entities,
+            lambda c=c: [
+                (
+                    ORION_DPS[identifier].code,
+                    c.device.supports_settings,
+                    lambda identifier=identifier: OrionSettingSwitch(c, identifier),
+                )
+                for identifier in SWITCHES
+            ],
+        )
 
 
 class OrionSettingSwitch(OrionEntity, SwitchEntity):

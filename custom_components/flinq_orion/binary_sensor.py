@@ -2,11 +2,12 @@
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.helpers.entity import EntityCategory
-from .entity import OrionEntity
+from .entity import OrionEntity, lamps
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    async_add_entities([OrionBatteryStatus(entry.runtime_data.coordinator)])
+    for subentry_id, coordinator in lamps(entry):
+        async_add_entities([OrionBatteryStatus(coordinator)], config_subentry_id=subentry_id)
 
 
 class OrionBatteryStatus(OrionEntity, BinarySensorEntity):

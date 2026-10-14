@@ -67,6 +67,7 @@ class Peer:
         # only acknowledge the requester with an empty DP report, as the Orion does.
         self.report_destination = None
         self.acknowledge_requester = True
+        self.address = 176
 
     def message(self, lower, *, ctl=False, proxy=False, destination=1):
         m = NetworkMessage(
@@ -75,7 +76,7 @@ class Peer:
             ctl,
             0 if proxy else 5,
             self.seq,
-            176,
+            self.address,
             0 if proxy else destination,
             lower,
         )
@@ -129,7 +130,7 @@ class Peer:
 
     async def report(self, payload, destination=1):
         first = self.seq
-        encrypted = encode_upper(payload, APP, first, 176, destination, 0)
+        encrypted = encode_upper(payload, APP, first, self.address, destination, 0)
         for lower in lower_segments(encrypted, APP, first):
             self.inject(0, self.message(lower, destination=destination))
 

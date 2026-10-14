@@ -12,8 +12,8 @@ from test_entities import Coordinator
 from test_session import Client, patched_connection, started_session
 
 
-def kinds(c):
-    return [record["kind"] for record in c.connection_history]
+def kinds(log):
+    return [record["kind"] for record in log.connection_history]
 
 
 @pytest.fixture
@@ -28,15 +28,15 @@ async def test_unused_link_closes_after_idle_time(tmp_path, short_idle):
     device_patch, connect_patch = patched_connection(AsyncMock(return_value=client))
     try:
         with device_patch, connect_patch as connector:
-            await s.ensure_connection()
+            await s.ensure_connection(c)
             assert s.connected
             assert connector.call_args.kwargs["max_attempts"] == 1
             await asyncio.sleep(0.2)
         assert not s.connected and not client.is_connected
         assert c.data["connected"] is False and c.device.controller is None
-        closed = [r for r in c.connection_history if r["kind"] == "idle_disconnect"]
+        closed = [r for r in s.log.connection_history if r["kind"] == "idle_disconnect"]
         assert len(closed) == 1 and closed[0]["link_lifetime_s"] >= 0
-        assert "disconnected" not in kinds(c)
+        assert "disconnected" not in kinds(s.log)
     finally:
         await s.stop()
         await c.stop()
@@ -69,13 +69,13 @@ async def test_refresh_runs_only_when_due_and_backs_off_after_failure(tmp_path, 
     device_patch, connect_patch = patched_connection(connector)
     try:
         with device_patch, connect_patch:
-            s.schedule_connect()
-            await s.task
-            assert "refresh" in kinds(c) and s.last_refresh is not None
+            s.schedule_connect(c)
+            await s.tasks[c.address]
+            assert "refresh" in kinds(c) and c.address in s.last_refresh
             await asyncio.sleep(0.2)
             assert not s.connected
-            s.schedule_connect()
-            assert s.task.done() and connector.await_count == 1
+            s.schedule_connect(c)
+            assert s.tasks[c.address].done() and connector.await_count == 1
     finally:
         await s.stop()
         await c.stop()
@@ -84,11 +84,12 @@ async def test_refresh_runs_only_when_due_and_backs_off_after_failure(tmp_path, 
     device_patch, connect_patch = patched_connection(AsyncMock(side_effect=OSError("offline")))
     try:
         with device_patch, connect_patch:
-            s.schedule_connect()
-            await s.task
-            failed = s.task
-            s.schedule_connect()
-        assert s.task is failed and s.failures == 1 and s.last_refresh is None
+            s.schedule_connect(c)
+            await s.tasks[c.address]
+            failed = s.tasks[c.address]
+            s.schedule_connect(c)
+        assert s.tasks[c.address] is failed and s.failures[c.address] == 1
+        assert c.address not in s.last_refresh
         assert c.connection_history[-1]["error"] == "DeviceUnavailableError"
     finally:
         await s.stop()
@@ -107,7 +108,7 @@ async def test_on_demand_connect_gives_up_at_the_deadline(tmp_path, monkeypatch)
     try:
         with device_patch, connect_patch:
             with pytest.raises(DeviceUnavailableError, match="battery") as unreachable:
-                await s.ensure_connection()
+                await s.ensure_connection(c)
         assert isinstance(unreachable.value.__cause__, TimeoutError)
     finally:
         await s.stop()
@@ -121,11 +122,11 @@ async def test_persistent_mode_keeps_the_link_and_reconnects(tmp_path, short_idl
     device_patch, connect_patch = patched_connection(connector)
     try:
         with device_patch, connect_patch:
-            s.schedule_connect()
-            await s.task
+            s.schedule_connect(c)
+            await s.tasks[c.address]
             assert connector.call_args.kwargs["max_attempts"] == MAX_CONNECT_ATTEMPTS
             await asyncio.sleep(0.2)
-            assert s.connected and "idle_disconnect" not in kinds(c)
+            assert s.connected and "idle_disconnect" not in kinds(s.log)
     finally:
         await s.stop()
         await c.stop()

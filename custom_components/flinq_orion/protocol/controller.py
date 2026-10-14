@@ -41,8 +41,12 @@ class MeshController:
         on_response,
         log,
     ):
-        if not 1 <= source <= 0x7FFF or not 1 <= node <= 0x7FFF or source == node:
+        # node: the lamp acting as proxy; None until its Proxy Filter Status reveals it.
+        if not 1 <= source <= 0x7FFF or (
+            node is not None and (not 1 <= node <= 0x7FFF or source == node)
+        ):
             raise MeshError("Invalid controller/node address")
+        # device_key: one key, or {unicast address: key} for several lamps.
         self.codec, self.app_key, self.device_key = codec, app_key, device_key
         self.source, self.node, self.iv_index = source, node, iv_index
         self.allocator, self.replay = allocator, replay
@@ -57,8 +61,13 @@ class MeshController:
         self.completed: OrderedDict[tuple, tuple[int, int, int]] = OrderedDict()
         self.closed = False
         self.destination = node
-        self.allowed_sources = {node}
+        self.allowed_sources = {node} if node is not None else set()
         self.device_command = False
+
+    def _device_key_for(self, address):
+        if isinstance(self.device_key, dict):
+            return self.device_key.get(address)
+        return self.device_key
 
     def _ready(self):
         if self.closed or self.replay.failed:
@@ -94,27 +103,35 @@ class MeshController:
             return seq
 
     async def configure_filter(self):
-        # Reject list with no entries: the proxy forwards every destination. The lamp
-        # publishes its DP reports to another address (docs/protocol.md). The filter only
-        # applies to this connection and does not change the lamp configuration.
+        """Return the proxy lamp's unicast address: the source of its Proxy Filter Status.
+
+        Reject list with no entries: the proxy forwards every destination. The lamp
+        publishes its DP reports to another address (docs/protocol.md). The filter only
+        applies to this connection and does not change the lamp configuration.
+        """
+        proxy_source = None
         for lower, expected in ((bytes((0, REJECT_LIST)), (REJECT_LIST, 0)),):
             future = asyncio.get_running_loop().create_future()
             self.filter_future = future, expected
             try:
                 await self._network(lower, ctl=True, proxy=True)
                 async with asyncio.timeout(5):
-                    await future
+                    proxy_source = await future
             except TimeoutError as err:
                 raise MeshTimeoutError("No authenticated Proxy Filter Status") from err
             finally:
                 self.filter_future = None
                 if not future.done():
                     future.cancel()
+        if self.node is None and proxy_source is not None:
+            self.node = self.destination = proxy_source
+            self.allowed_sources.add(proxy_source)
+        return proxy_source
 
     async def send_access(self, payload: bytes):
         self._ready()
         device = self.device_command
-        key = self.device_key if device else self.app_key
+        key = self._device_key_for(self.destination) if device else self.app_key
         if key is None:
             raise MeshError("Device key required")
         async with self.wire_lock:
@@ -195,7 +212,11 @@ class MeshController:
         # Both the key choice and request/response matching are serialized.
         async with self.request_lock:
             self.destination = destination or self.node
-            if not 1 <= self.destination <= 0x7FFF or self.destination == self.source:
+            if (
+                self.destination is None
+                or not 1 <= self.destination <= 0x7FFF
+                or self.destination == self.source
+            ):
                 raise MeshError("Commands require a distinct valid unicast destination")
             self.allowed_sources.add(self.destination)
             self.device_command = device
@@ -239,7 +260,7 @@ class MeshController:
                     future, (kind_expected, count) = self.filter_future
                     status = msg.lower[1], int.from_bytes(msg.lower[2:], "big")
                     if status == (kind_expected, count) and not future.done():
-                        future.set_result(msg.lower)
+                        future.set_result(msg.src)
                 return
             if msg.src not in self.allowed_sources:
                 return
