@@ -412,3 +412,60 @@ Sources:
 - https://github.com/telink-semi/tc_ble_mesh (current SDK: request 16, 32, 0, 500)
 - bleak-esphome 4.0.0 and bleak-retry-connector 4.7.1 source distributions (PyPI)
 - https://support.tuya.com/en/help/_detail/K9hut3w10nby8 (three toggles reset lighting products)
+
+## Test result 0.2.9b1: captures 16/17, proxy log 9 (2026-10-14)
+
+Procedure: [link-test-procedure.md](link-test-procedure.md). Times are UTC.
+
+### Passive network check
+
+`network_evidence` was `node_identity_match` in 4 of 4 checks, and no Unprovisioned
+Device packet was seen. The lamp holds our NetKey and advertises unicast address 0x00B0.
+Two probe reads at 13:46:56 received authenticated replies, so the NetKey and AppKey still
+work. Re-onboarding is not indicated by this evidence.
+
+### Links
+
+| Link | Type | Open | Lamp update 32/200 | Last lamp traffic | Loss | Lifetime |
+|---|---|---|---|---|---|---|
+| gen 1 | not in proxy log (probably uncached, first after restart) | 13:40:51 | not logged | notifications at +1.4 s | during proxy filter setup | 5.1 s |
+| gen 3 | cached | 13:43:54 | +1.33 s | none after the update | 0x08; CCCD write failed at update +1.98 s | 6.7 s |
+| gen 4 | cached | 13:46:56 | +1.06 s | notification at +0.51 s | 0x08 at update +2.27 s | 3.4 s |
+
+Probe summary: 9 reads, 2 responses (both on gen 4 within 0.51 s of the link opening),
+longest link 0.51 s at a response. Between links the lamp was unreachable for minutes
+(connect timeouts, "last advertisement 255 s / 339 s ago").
+
+### Evaluation against the procedure
+
+Cached and uncached links both stopped within 21 s. By the criterion fixed before the
+test, H2 (the uncached proxy path is the cause) is rejected. The connection policy of
+the integration does not explain the failure.
+
+### Pattern now observed three times
+
+In every link where the proxy log shows both the lamp-requested update to interval 32
+(40 ms), latency 0, timeout 200 (2 s) and a later loss (log 7, log 9 gen 3, log 9 gen 4),
+the loss occurred 2.0–2.5 s after the update. No lamp traffic is logged after the update.
+At 11.25 ms the same links carried notifications and authenticated replies. Two cached
+and one uncached link show this, so the pattern does not depend on the connection type.
+
+This is consistent with a loss of synchronisation at the update instant. The data does
+not show which side fails. Other losses (log 8) happened before the lamp update, so the
+update is not shown to be the only failure point.
+
+### Lamp sequence numbers
+
+The lamp's mesh SEQ went from 657 (09:04:53, last working session) to 683 (09:25:58, first
+failing session), and from 985 (11:18:20) to 1461 (13:46:55). The Telink reference SDK
+adds 0x80 to the saved SEQ at boot (`MESH_CMD_SNO_SAVE_DELTA`). Assuming the lamp firmware
+does the same (not verified), the lamp did not reboot between the last working and the
+first failing session. The 476 increase after 11:18 fits several reboots, which matches
+the power cycles during the beta test.
+
+### Remaining explanation
+
+H1 remains: since about 09:25 the lamp loses links, most visibly at its own parameter
+update, independent of the integration. Unknown: whether the lamp alone causes this, or
+the interaction between this lamp and the ESP32 controller. A connection from a different
+central (an iPhone, without keys and without mesh writes) separates these two.

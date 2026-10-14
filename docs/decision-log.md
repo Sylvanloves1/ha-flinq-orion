@@ -84,3 +84,25 @@ costs one loader call), or keep a manual string (costs repeated mistakes).
 **Recommendation.** Read the version from the manifest.
 
 **Decision.** Implemented in 0.2.9b1. Status: open, awaiting review by Sylvan Loves.
+
+## D-005 Evaluation of the 0.2.9b1 link test (2026-10-14)
+
+**Context.** D-001 defined one test with fixed criteria to separate H1 (lamp state) from
+H2 (uncached proxy path).
+
+**Considerations.** Two cached links (proxy log 9) and one probably uncached link stopped
+within 7 s. Network evidence matched our NetKey and address 0x00B0. In three of three
+logged cases the link was lost 2.0–2.5 s after the lamp-requested update to 40 ms / 2 s.
+Details: [protocol.md](protocol.md), "Test result 0.2.9b1".
+
+**Options.**
+- Accept the criterion: H2 is rejected; the next step concerns the lamp or the radio link,
+  not the integration's connection policy.
+- Repeat the test. Gives: more samples. Costs: more power cycles and time; the criterion
+  was met clearly.
+
+**Recommendation.** Accept the criterion. Keep the 0.2.9b1 cache policy, because it is the
+0.2.1 policy and it does not make the failure worse.
+
+**Decision.** Recorded as the evaluation of the agreed criterion. The next step is open
+and needs a decision by Sylvan Loves. Status: open.
