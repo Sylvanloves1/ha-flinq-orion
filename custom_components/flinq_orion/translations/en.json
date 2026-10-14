@@ -29,6 +29,7 @@
           "iv_index": "Current IV Index",
           "availability_timeout": "Availability timeout (seconds)",
           "transport_mode": "Protocol mode",
+          "connection_mode": "Connection mode (on_demand: connect per command, recommended for the battery lamp; persistent: keep a link open)",
           "device_key": "DeviceKey (optional, 32 hex characters)",
           "source_address": "Dedicated unused controller address (decimal)",
           "node_address": "Primary lamp address (176 = 0x00B0)",

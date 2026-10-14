@@ -42,6 +42,8 @@ LIFECYCLE_KINDS = frozenset(
         "lamp_state_warning",
         "link_probe",
         "action_error",
+        "refresh",
+        "idle_disconnect",
     }
 )
 

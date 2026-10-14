@@ -8,7 +8,7 @@ from custom_components.flinq_orion.const import PROXY_SERVICE, PROXY_IN, PROXY_O
 from custom_components.flinq_orion.coordinator import OrionCoordinator
 from custom_components.flinq_orion.session import MeshSession
 from custom_components.flinq_orion.protocol.proxy import ProxySAR
-from custom_components.flinq_orion.protocol.errors import MeshError
+from custom_components.flinq_orion.protocol.errors import DeviceUnavailableError, MeshError
 from test_active_mesh import Peer, NET, APP
 
 
@@ -100,8 +100,9 @@ async def test_active_gatt_connect_reports_and_reconnect(tmp_path):
         patch("custom_components.flinq_orion.session.establish_connection", connector),
     ):
         try:
-            with pytest.raises(ConnectionError):
+            with pytest.raises(DeviceUnavailableError, match="battery") as unreachable:
                 await s.ensure_connection()
+            assert isinstance(unreachable.value.__cause__, ConnectionError)
             with pytest.raises(MeshError, match="notification setup failed"):
                 await s.ensure_connection()
             # A setup failure must not force the next connection onto the uncached path.
@@ -138,7 +139,7 @@ async def test_active_gatt_connect_reports_and_reconnect(tmp_path):
     assert s.rx_worker.done()
 
 
-async def started_session(tmp_path):
+async def started_session(tmp_path, **options):
     hass = HomeAssistant(str(tmp_path))
     entry = Mock()
     entry.entry_id = "test"
@@ -151,6 +152,7 @@ async def started_session(tmp_path):
         "node_address": 176,
         "new_source_confirmed": True,
         "iv_index": 0,
+        **options,
     }
     hass.config_entries = SimpleNamespace(
         async_update_entry=lambda entry, **kwargs: entry.data.update(kwargs.get("data", {}))
@@ -231,7 +233,7 @@ async def test_probe_records_failures_and_continues(tmp_path):
         with device_patch, connect_patch:
             summary = await s.probe_link(seconds=0.03, interval=0.01)
         assert summary["responses"] == 0
-        assert summary["failures"] == {"ConnectionError": summary["probes"]}
+        assert summary["failures"] == {"DeviceUnavailableError": summary["probes"]}
         assert summary["links_used"] == 0 and summary["probes"] >= 2
         assert c.data["command_failures"] == 0
     finally:

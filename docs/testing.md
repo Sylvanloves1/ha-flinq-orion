@@ -6,6 +6,8 @@ Offline tests cover documented SIG crypto vectors including Proxy Configuration 
 
 0.2.9b1 adds tests for the passive network check (Network ID, Node Identity hash for the configured address, merged versus raw packet data), the cache-clear rule, link lifetime records that survive packet traffic, and the read-only link probe. The Node Identity hash layout matches two independent implementations (Telink SIG Mesh SDK `proxy_adv_calc_with_node_identity`, Zephyr `node_id_adv`). No official sample vector for it was found. The cached and uncached ESPHome proxy paths cannot be reproduced offline; [link-test-procedure.md](link-test-procedure.md) covers them.
 
+0.3.0b1 adds tests for on-demand connections: the idle disconnect after 60 s, requests and running operations that keep the link open, the refresh that runs only when due and backs off after a failure, the 25 s connect deadline with one attempt, the unchanged persistent mode, and entity availability per mode. These tests use a synthetic peer and short timers. Physical behaviour: [on-demand-test.md](on-demand-test.md).
+
 These tests prove implementation behavior against synthetic peers. They do not prove which protocol variant the FQC8274 firmware implements, that an AppKey is correctly bound on the lamp, physical power/brightness/color, scene completeness or PIR semantics. The README provides the one initial capture needed to resolve the bearer. After that, existing key availability and authenticated responses determine the next controlled test.
 
 Tests use published SIG sample keys and synthetic state only; there are no real device keys in the repository. Third-party HA/backoff deprecation warnings are reported separately from test failures.

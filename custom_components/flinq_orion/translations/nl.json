@@ -29,6 +29,7 @@
           "iv_index": "Huidige IV Index",
           "availability_timeout": "Beschikbaarheidstime-out (seconden)",
           "transport_mode": "Protocolvariant",
+          "connection_mode": "Verbindingsmodus (on_demand: verbinden per opdracht, aanbevolen voor de accu-lamp; persistent: verbinding open houden)",
           "device_key": "DeviceKey (optioneel, 32 hextekens)",
           "source_address": "Eigen vrij controlleradres (decimaal)",
           "node_address": "Primair lampadres (176 = 0x00B0)",

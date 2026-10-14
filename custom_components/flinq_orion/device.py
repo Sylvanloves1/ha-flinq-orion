@@ -19,6 +19,8 @@ class OrionDevice:
         self.composition: dict | None = None
         self.controller = None
         self.ensure_connection = None
+        # Set by the session: any request keeps an on-demand link open for its idle time.
+        self.activity: Callable[[], None] | None = None
         self.options = coordinator.entry.options
         self.tid = 0
         self.operation_lock = asyncio.Lock()
@@ -241,6 +243,9 @@ class OrionDevice:
                 self.coordinator.data["responsive"] = False
             self.coordinator.async_set_updated_data(dict(self.coordinator.data))
             raise
+        finally:
+            if self.activity:
+                self.activity()
 
     async def probe(self):
         """One bounded read-only status read; a timeout is not counted as a command failure."""

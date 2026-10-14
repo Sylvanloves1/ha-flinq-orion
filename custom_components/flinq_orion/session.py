@@ -1,12 +1,17 @@
-"""HA proxy-aware persistent GATT session with bounded reconnect scheduling."""
+"""HA proxy-aware GATT session: on demand (default) or persistent with bounded reconnects."""
 
 import asyncio
 import hashlib
 import time
 import re
 from homeassistant.components import bluetooth
+from homeassistant.core import callback
 from .storage import DurableStore
-from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
+from bleak_retry_connector import (
+    MAX_CONNECT_ATTEMPTS,
+    BleakClientWithServiceCache,
+    establish_connection,
+)
 from .const import DOMAIN, PROXY_SERVICE, PROXY_IN, PROXY_OUT
 from .protocol.controller import MeshController
 from .protocol.sequence import SequenceAllocator
@@ -14,6 +19,13 @@ from .protocol.replay import ReplayProtection
 from .protocol.proxy import ProxySAR
 from .protocol.errors import MeshError, DeviceUnavailableError, FlinqOrionError
 from .protocol.beacon import decode_secure_beacon
+
+# On-demand mode for the battery-powered lamp (D-009, D-010).
+IDLE_DISCONNECT_SECONDS = 60
+REFRESH_SECONDS = 30 * 60
+# One 20 s connection attempt plus margin. Without a deadline, bleak-retry-connector
+# retries "device not seen" errors up to nine times.
+ON_DEMAND_CONNECT_DEADLINE = 25
 
 
 class MeshSession:
@@ -36,6 +48,9 @@ class MeshSession:
         self.failures = 0
         self.setup_stage = "idle"
         self.link_opened: float | None = None
+        self.on_demand = self.entry.options.get("connection_mode", "on_demand") == "on_demand"
+        self.idle_handle: asyncio.TimerHandle | None = None
+        self.last_refresh: float | None = None
         self.key_scope = hashlib.sha256(bytes.fromhex(self.entry.options["net_key"])).hexdigest()[
             :24
         ]
@@ -46,6 +61,7 @@ class MeshSession:
         self.store = DurableStore(self.hass, f"{DOMAIN}.sequence.{self.identity}")
         self.replay = ReplayProtection(DurableStore(self.hass, f"{DOMAIN}.replay.{self.identity}"))
         coordinator.device.ensure_connection = self.ensure_connection
+        coordinator.device.activity = self.touch
 
     async def initialize(self):
         existing = await self.store.async_load()
@@ -67,14 +83,26 @@ class MeshSession:
         )
 
     def schedule_connect(self):
+        """Called on advertisements and every 30 s while the lamp is seen.
+
+        Persistent mode keeps a link. On-demand mode only connects for a status refresh
+        when one is due; commands connect through ensure_connection.
+        """
         if (
             self.closed
             or self.crypto_blocked
             or self.coordinator.device.mode == "observe"
-            or self.connected
             or (self.task and not self.task.done())
             or time.monotonic() < self.next_attempt
         ):
+            return
+        if self.on_demand:
+            if self.last_refresh is None or time.monotonic() - self.last_refresh >= REFRESH_SECONDS:
+                self.task = self.hass.async_create_background_task(
+                    self._refresh(), "FlinQ Orion refresh"
+                )
+            return
+        if self.connected:
             return
         self.task = self.hass.async_create_background_task(
             self._background_connect(), "FlinQ Orion reconnect"
@@ -116,9 +144,23 @@ class MeshSession:
             # Read-only discovery. No bind or DP writes happen on startup/reconnect.
             await self.coordinator.device.discover()
         except Exception as err:
-            self.coordinator.record(self.connection_error(err))
-            self.failures += 1
-            self.next_attempt = time.monotonic() + min(300, 15 * (2 ** min(self.failures, 5)))
+            self._failed(err)
+
+    async def _refresh(self):
+        """Read-only status refresh; the idle timer closes the link afterwards."""
+        try:
+            results = await self.coordinator.device.discover()
+        except Exception as err:
+            self._failed(err)
+            return
+        self.failures = 0
+        self.last_refresh = time.monotonic()
+        self.coordinator.record({"kind": "refresh", "results": results})
+
+    def _failed(self, err):
+        self.coordinator.record(self.connection_error(err))
+        self.failures += 1
+        self.next_attempt = time.monotonic() + min(300, 15 * (2 ** min(self.failures, 5)))
 
     def _disconnected(self, client):
         if client is not self.client:
@@ -131,13 +173,61 @@ class MeshSession:
                 "link_lifetime_s": self.link_lifetime(),
             }
         )
+        self._mark_disconnected()
+        self.next_attempt = max(self.next_attempt, time.monotonic() + 15)
+
+    def _mark_disconnected(self):
+        self._cancel_idle()
         self.connection_generation += 1
         if self.controller:
             self.controller.close()
         self.coordinator.data["connected"] = False
         self.coordinator.device.controller = None
         self.coordinator.async_set_updated_data(dict(self.coordinator.data))
-        self.next_attempt = max(self.next_attempt, time.monotonic() + 15)
+
+    def touch(self):
+        """Restart the idle timer after activity. Persistent mode keeps the link."""
+        if not self.on_demand or self.closed:
+            return
+        self._cancel_idle()
+        self.idle_handle = self.hass.loop.call_later(IDLE_DISCONNECT_SECONDS, self._idle_expired)
+
+    def _cancel_idle(self):
+        if self.idle_handle:
+            self.idle_handle.cancel()
+            self.idle_handle = None
+
+    def _requests_active(self):
+        return self.coordinator.device.operation_lock.locked() or bool(
+            self.controller and self.controller.request_lock.locked()
+        )
+
+    @callback
+    def _idle_expired(self):
+        self.idle_handle = None
+        if not self.connected:
+            return
+        if self.lock.locked() or self._requests_active() or (self.task and not self.task.done()):
+            self.touch()
+            return
+        self.hass.async_create_background_task(self._idle_disconnect(), "FlinQ Orion idle")
+
+    async def _idle_disconnect(self):
+        async with self.lock:
+            if not self.connected:
+                return
+            if self._requests_active():
+                self.touch()
+                return
+            client = self.client
+            assert client is not None  # connected implies a client
+            self.coordinator.record(
+                {"kind": "idle_disconnect", "link_lifetime_s": self.link_lifetime()}
+            )
+            # Detach first: the disconnect callback ignores a link this session closes.
+            self.client = None
+            self._mark_disconnected()
+            await client.disconnect()
 
     def link_lifetime(self):
         if self.link_opened is None:
@@ -148,11 +238,13 @@ class MeshSession:
         if self.crypto_blocked:
             raise MeshError("Authenticated IV/key-refresh transition requires recovery")
         if self.connected:
+            self.touch()
             return
         async with self.lock:
             if self.closed:
                 raise DeviceUnavailableError("Integration unloaded")
             if self.connected:
+                self.touch()
                 return
             device = bluetooth.async_ble_device_from_address(
                 self.hass, self.coordinator.address, connectable=True
@@ -170,12 +262,22 @@ class MeshSession:
             # 0.2.1 policy: reuse services HA already holds so the ESPHome proxy can take its
             # cached path. No logged uncached proxy connection to this lamp lasted over 21 s.
             self.coordinator.record({"kind": "connect_attempt", "services_cache": "allowed"})
-            client = await establish_connection(
-                BleakClientWithServiceCache,
-                device,
-                "FlinQ Orion",
-                disconnected_callback=self._disconnected,
-            )
+            try:
+                async with asyncio.timeout(ON_DEMAND_CONNECT_DEADLINE if self.on_demand else None):
+                    client = await establish_connection(
+                        BleakClientWithServiceCache,
+                        device,
+                        "FlinQ Orion",
+                        disconnected_callback=self._disconnected,
+                        max_attempts=1 if self.on_demand else MAX_CONNECT_ATTEMPTS,
+                    )
+            except FlinqOrionError:
+                raise
+            except Exception as err:
+                raise DeviceUnavailableError(
+                    "Lamp not reachable over Bluetooth; it may be out of range or its battery "
+                    "may be low"
+                ) from err
             if self.closed:
                 await client.disconnect()
                 raise DeviceUnavailableError("Integration unloaded while connecting")
@@ -262,6 +364,7 @@ class MeshSession:
                         "setup_s": self.link_lifetime(),
                     }
                 )
+                self.touch()
             except BaseException as err:
                 self.coordinator.record(
                     {**self.connection_error(err), "link_lifetime_s": self.link_lifetime()}
@@ -387,6 +490,7 @@ class MeshSession:
 
     async def stop(self):
         self.closed = True
+        self._cancel_idle()
         if self.controller:
             self.controller.close()
         tasks = [

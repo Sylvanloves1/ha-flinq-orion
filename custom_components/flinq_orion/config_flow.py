@@ -162,6 +162,9 @@ class OptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     "transport_mode", default=old.get("transport_mode", "observe")
                 ): vol.In(["observe", "query_only", "vendor_dp", "sig"]),
+                vol.Required(
+                    "connection_mode", default=old.get("connection_mode", "on_demand")
+                ): vol.In(["on_demand", "persistent"]),
                 optional("net_key", ""): selector.TextSelector(
                     selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
                 ),

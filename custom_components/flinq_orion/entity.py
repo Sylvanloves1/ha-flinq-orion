@@ -24,11 +24,11 @@ class OrionEntity(CoordinatorEntity):
 
     @property
     def available(self):
-        return bool(
-            self.coordinator.data["available"]
-            and self.coordinator.data.get("connected")
-            and self.coordinator.data.get("responsive")
-        )
+        data = self.coordinator.data
+        if self.device.options.get("connection_mode", "on_demand") == "on_demand":
+            # Usually no link is open; a command connects. Recent advertising is the signal.
+            return bool(data["available"])
+        return bool(data["available"] and data.get("connected") and data.get("responsive"))
 
 
 def add_when_supported(entry, async_add_entities, factory):

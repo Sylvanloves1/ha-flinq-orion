@@ -1,8 +1,23 @@
 # FlinQ Orion FQC8274 — experimental local integration
 
-Version **0.2.9b1** is a new independent Home Assistant custom integration, not a fork or wrapper. It includes an active local Tuya SIG Mesh client through Home Assistant's Bluetooth stack and ESPHome Bluetooth Proxies. **Local SIG power control has been confirmed on the Orion; other features still require physical verification.** Selecting a protocol enables an experiment, not a claim that all FQC8274 features work.
+Version **0.3.0b1** is a new independent Home Assistant custom integration, not a fork or wrapper. It includes an active local Tuya SIG Mesh client through Home Assistant's Bluetooth stack and ESPHome Bluetooth Proxies. **Local SIG power control has been confirmed on the Orion; other features still require physical verification.** Selecting a protocol enables an experiment, not a claim that all FQC8274 features work.
 
-0.2.9b1 is a test prerelease, not a validated fix. It restores the GATT service cache policy of 0.2.1, checks passively whether the lamp still advertises the configured network and unicast address, keeps a separate connection history in diagnostics and adds the read-only `flinq_orion.probe_link` action. Use it only with [docs/link-test-procedure.md](docs/link-test-procedure.md). The 0.2.8b1 connection-parameter experiment is not included.
+## The Orion runs on a battery
+
+The Orion is a solar lamp with a Li-ion battery. With a low battery it wakes for a few seconds about every 3 minutes and no Bluetooth link works. Charge it over USB-C when it gets little sun. Do not use pairing mode or a power-cycle sequence as a fix: three quick power toggles reset Tuya lamps. Background: [docs/protocol.md](docs/protocol.md), sections from "Passive monitor 2" on.
+
+## Connection mode (0.3.0b1)
+
+0.3.0b1 is a test prerelease. The option **Connection mode** controls the Bluetooth link:
+
+| Mode | Behaviour |
+|---|---|
+| `on_demand` (default) | A command opens a link; the link closes after 60 s without activity. The status is refreshed when Home Assistant starts and then every 30 minutes, when the lamp is seen. If the lamp cannot be reached within about 20 s, the command fails with "Lamp not reachable over Bluetooth". The light is available when the lamp advertised within the availability timeout. |
+| `persistent` | The 0.2.9b1 behaviour: keep one link open and reconnect with backoff. The light is available only while the link is up. |
+
+The first command after an idle period takes longer (measured: 1–4 s to connect and set up). Follow-up commands within 60 s use the open link. The lamp does not report its own changes, such as PIR switching, to Home Assistant in either mode. Decisions: [docs/decision-log.md](docs/decision-log.md), D-009 and D-010.
+
+0.2.9b1 changes that remain: the GATT service cache policy of 0.2.1, the passive check that the lamp still advertises the configured network and unicast address, the connection history in diagnostics and the read-only `flinq_orion.probe_link` action.
 
 Implemented:
 
