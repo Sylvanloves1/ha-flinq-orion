@@ -106,3 +106,29 @@ Details: [protocol.md](protocol.md), "Test result 0.2.9b1".
 
 **Decision.** Recorded as the evaluation of the agreed criterion. The next step is open
 and needs a decision by Sylvan Loves. Status: open.
+
+## D-006 Next step: control link from a Mac with PacketLogger (2026-10-14)
+
+**Context.** D-005 rejected H2. Open question: does the lamp lose the link by itself, or
+only with the ESP32 proxy as central?
+
+**Considerations.** A second central separates these two without keys or mesh writes.
+An iPhone shows only the link duration. A Mac with PacketLogger also shows the parameter
+update request, the accepted parameters and the disconnect reason. Reports exist of
+PacketLogger capturing nothing on recent macOS; the script output still answers the main
+question in that case.
+
+**Options.**
+- A. iPhone with nRF Connect. Gives: quick. Costs: no parameters visible.
+- B. Mac with PacketLogger. Gives: parameters and disconnect reason. Costs: Additional
+  Tools for Xcode, a logging profile and more setup.
+- C. Other central hardware (ESP32-C3/S3 proxy, USB adapter). Gives: tests a possible
+  solution. Costs: hardware and time.
+- D. Reset and re-onboard the lamp. Gives: a clean lamp state. Costs: irreversible, new
+  keys, new controller setup.
+
+**Recommendation.** A, as the cheapest discriminating test.
+
+**Decision.** B, chosen by Sylvan Loves. Status: settled. The central is a read-only
+script (`tools/control_link_test.py`) instead of a GUI app, so that every event has a UTC
+time for correlation with PacketLogger.
