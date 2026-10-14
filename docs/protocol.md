@@ -213,3 +213,551 @@ and [retry connector source](https://github.com/Bluetooth-Devices/bleak-retry-co
 Install 0.2.7, restart HA and power-cycle the lamp once. Wait one minute and try
 on/off. Capture FlinQ diagnostics and simultaneous ESPHome logs to establish
 whether service discovery, notification subscription or proxy filter setup fails.
+
+## Correlated capture 12 / proxy log 3 (2026-10-14)
+
+At 12:52:19 local time the proxy opens an uncached connection, discovers services
+and reports MTU 250 and a medium connection-parameter update. HA enters notification
+subscription at 10:52:19 UTC. Mesh Proxy Data Out 0x2ADE has handle 28; its CCCD
+0x2902 has handle 30. At 12:52:40 the proxy reports an error writing descriptor
+0x1E (30), status 133, immediately followed by disconnect reason 0x08 (connection
+timeout). No mesh access or proxy filter message was transmitted. Fresh discovery
+did not resolve the failure; the CCCD handle is consistent with the discovered table.
+
+This establishes failure during GATT notification subscription, not a mesh key,
+sequence or DP response failure. It does not distinguish radio coexistence,
+connection-parameter incompatibility, proxy/stack behavior or peripheral behavior.
+Earlier vendor/range-query correlations are insufficient evidence of causation.
+Do not promote 0.2.7 as a physically validated stable release. Inspect the actual
+ESPHome YAML before changing radio or connection parameters. No additional code
+release was made from this capture.
+
+Reference: [ESP-IDF HCI error definitions](https://github.com/espressif/esp-idf/blob/master/components/bt/host/bluedroid/stack/include/stack/hcidefs.h)
+define HCI_ERR_CONNECTION_TOUT as 0x08.
+
+## Correlated capture 14 / proxy log 5
+
+After the WiFi power-save experiment and manual status action, at 13:18:19 local
+time the uncached proxy connection opens (MTU 250, medium connection parameters).
+Notification subscription and authenticated proxy filtering succeed. Four standard
+SIG GETs all receive authenticated replies by 13:18:20.800. At 13:18:22.951 the
+proxy reports DISCONNECT_EVT reason 0x08 without a preceding local Disconnecting
+request. No optional range/composition/vendor query is transmitted in this session.
+
+This establishes a link timeout even after successful startup and disproves
+optional queries as a necessary cause. It does not identify which endpoint,
+connection-parameter negotiation or radio conditions cause the timeout. Do not
+claim that WiFi power-save adjustment, cache refresh or query removal resolved it.
+Next physical isolation: keep software/settings fixed, temporarily place the
+proxy 1–2 metres from the lamp with unobstructed placement, and reproduce one
+manual status connection with concurrent logs. Strong advertisement RSSI alone
+does not demonstrate sustained bidirectional link reliability.
+
+## Connection parameter source audit (ESPHome 2026.9.1)
+
+Source audit confirms uncached Bluedroid setup requests FAST min/max 6 units
+(7.5 ms), latency 0, supervision timeout 1000 units (10 s). Discovery completion
+calls an update to MEDIUM min 7/max 9 (8.75–11.25 ms), latency 0, timeout 800 (8 s).
+These are requested parameters, not measured negotiated values. A disconnect
+roughly 3.1 s after open cannot by itself be attributed to the requested 8 s timer.
+
+`esp32_ble/ble.cpp` handles `ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT`: failed updates
+are WARN; successful updates are VERBOSE under tag `esp32_ble` with actual interval,
+latency and timeout. Previous DEBUG captures omit successful negotiated values.
+Use existing firmware logging instrumentation before introducing an interval override.
+The HA client exposes `set_connection_params`; the ESPHome backend requests the
+update through the API, and unsupported firmware may only warn and return. A
+completed API call alone therefore must not be treated as proof of negotiation.
+No automatic parameter override or published integration change was made.
+
+Sources (version pinned where applicable):
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/ble_device_base/ble_client_state.h
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/bluetooth_connection/bluetooth_connection_bluedroid.cpp
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/esp32_ble/ble.cpp
+- https://github.com/Bluetooth-Devices/bleak-esphome/blob/main/src/bleak_esphome/backend/client.py
+
+Next capture: compile logger at VERBOSE, initial runtime DEBUG, override only
+esp32_ble to VERBOSE. Keep radio, mesh and integration settings fixed. Power-cycle
+the lamp once with live logs, invoke normal status button once advertisements
+return, capture two minutes and inspect `Conn params updated`/`Conn param update
+failed` together with the connection-open and disconnect timestamps.
+
+## Negotiated values from proxy log 7
+
+At 13:47:51.819 the successful GAP update reports interval 9 (11.25 ms),
+latency 0, supervision timeout 800 (8 s). At 13:47:52.737 another successful
+update reports interval 32 (40 ms), latency 0, timeout 200 (2 s). Disconnect
+reason 0x08 follows at 13:47:55.206, 2.469 seconds after the second update.
+The shorter negotiated timer is now observed, not inferred from defaults. The
+log does not identify which endpoint initiated the second update; attributing
+it to the lamp is a hypothesis. The timing supports a parameter/link interaction
+but does not prove that increasing supervision timeout restores reliable traffic.
+
+A next isolated experiment may preserve the observed 40 ms interval and latency
+0 while requesting timeout 800 (8 s) through the supported HA BLE client API.
+Verify the accepted GAP values, not merely API completion, and sustained on/off
+responses over at least 60 seconds. Longer availability alone is insufficient:
+the link may simply time out later. No automatic override is enabled in 0.2.7.
+
+## Beta experiment result: capture 15 / proxy log 8
+
+Two experiment calls at 14:14:30 and 14:17:15 local return from the HA API,
+but each corresponding proxy GAP event reports `Conn param update failed,
+status=16`. No accepted 40 ms / 8 s update is reported. Notification CCCD writing
+then fails with status 133 and disconnect reason 0x08. No authenticated mesh
+reports are received in these attempts. The beta is not a successful fix and
+must not be promoted to main. Status 16 is retained numerically; do not claim
+a rejection by the lamp or assign an HCI meaning without tracing the API enum.
+
+A control with a separate BLE client (integration disabled to avoid competition)
+can test sustained GATT connection and Proxy Data Out notification subscription
+without keys, provisioning, descriptor overrides or mesh writes. This separates
+proxy-path compatibility from peripheral-side behavior. Device keys need not be
+shared with the control client. No further parameter guesses are justified by
+this unsuccessful experiment.
+
+## Source audit and capture correlation (0.2.9b1)
+
+All times are UTC. Proxy logs show local time (UTC+2) and are converted here.
+
+### Facts from source code
+
+- ESPHome 2026.9.1, `bluetooth_connection_bluedroid.cpp`: an uncached connection uses
+  FAST parameters (7.5 ms, 10 s), runs service discovery and requests MEDIUM
+  (8.75–11.25 ms, 8 s) after discovery. A cached connection opens with MEDIUM, runs no
+  discovery and sends no parameter update (`bluetooth_connection_hub.cpp` asks for MEDIUM
+  again; Bluedroid logs "connection parameter already set").
+- The MTU request is sent on `ESP_GATTC_CONNECT_EVT` for both connection types. A cached
+  connection reports `mtu=23` by design (`DEFAULT_ATT_MTU`, OPEN_EVT handler). The
+  "MTU 23 versus 250" difference in earlier notes is a reporting difference, not a
+  negotiated difference.
+- bleak-retry-connector 4.7.1: `use_services_cache=False` sends
+  `dangerous_use_bleak_cache=False`. bleak-esphome 4.0.0 then always requests
+  `V3_WITHOUT_CACHE`. With the default (`True`), bleak-esphome requests `V3_WITH_CACHE`
+  when it holds services and an MTU for the address. That cache is in memory per proxy API
+  session. A Home Assistant restart or a proxy reconnect clears it. An integration cannot
+  fill it (`set_cached_services` is a no-op).
+- 0.2.7 called `clear_cache()` after every failed setup. That forced every next attempt
+  onto the uncached path.
+- `Conn param update failed, status=16`: `esp_bt_status_t` value 16 is
+  `ESP_BT_STATUS_TIMEOUT`, mapped from `HCI_ERR_HOST_TIMEOUT` (`btc_hci_to_esp_status`).
+  Bluedroid sets it when its connection-update timer expires (`l2c_process_timeout`,
+  `BTU_TTYPE_L2CAP_UPDA_CONN_PARAMS`). `CalConnectParamTimeout` gives 1–2 s here. The
+  controller did not report completion. It is not a rejection by the lamp.
+- Telink SIG Mesh SDK builds from 2020–2022 call
+  `bls_l2cap_requestConnParamUpdate(16, 32, 0, 200)` in `mesh_ble_connect_cb`. The lamp
+  exposes the Telink OTA service UUID. The observed update to interval 32, latency 0,
+  timeout 200 matches this request. ESPHome never requests these values. Conclusion: the
+  40 ms / 2 s update is very probably requested by the lamp. The proxy log does not show
+  the L2CAP request itself.
+- habluetooth `base_scanner.py` merges service UUIDs and service data of successive
+  advertisements. One Unprovisioned Device packet therefore stays visible in
+  `service_data` until Home Assistant restarts. The raw packet shows the latest content.
+
+### Links opened by the proxy (logs 1, 3, 5, 7, 8)
+
+| Log | Type | Open | Lifetime | End | Parameter updates (seconds after open) |
+|---|---|---|---|---|---|
+| 1 | cached | 10:39:26 | 5.1 s | local (no Proxy Filter Status in 5 s) | none logged (DEBUG level) |
+| 3 | uncached | 10:52:20 | 20.1 s | 0x08, CCCD write status 133 | none logged (DEBUG level) |
+| 5 | uncached | 11:18:20 | 3.2 s | 0x08 | none logged (DEBUG level) |
+| 7 | uncached | 11:47:52 | 3.5 s | 0x08 | 9/800 at 0.11, 32/200 at 1.03 |
+| 8 | uncached | 12:14:28 | 9.9 s | 0x08 | 9/800 at 1.12, beta request failed at 3.69 |
+| 8 | uncached | 12:15:08 | 3.1 s | local (no 0x1828 in table) | 9/800 at 1.55, 32/200 at 2.17 |
+| 8 | uncached | 12:15:54 | 10.6 s | 0x08 | none |
+| 8 | uncached | 12:17:13 | 9.9 s | 0x08 | 9/800 at 2.58, beta request failed at 5.00 |
+
+No uncached link lasted longer than 21 s. Lifetimes near 10 s match a link that stopped
+early under the 8 s or 10 s supervision timeout. Lifetimes near 3 s match the 2 s timeout
+after the 32/200 update. The link loss is therefore not always tied to that update.
+
+### Lamp state across captures
+
+- Working 0.2.1 sessions (08:49, 08:55, 09:04): the lamp advertised Network ID.
+- Every failing session with advertisements (09:25 onwards): Node Identity.
+- 12:15:09: a fresh discovery returned the Telink provisioning layout: 0x1827 visible,
+  the proxy characteristics under 0x7FDD. HA recorded Unprovisioned Device service data
+  from 12:15:12. The 12:17:14 discovery returned the normal proxy layout again.
+- The last authenticated mesh message was received at 11:18:20.
+- The Node Identity random changed at intervals of about 181 s in capture 13. The cause
+  is unknown.
+- Diagnostics `data.version` was hard-coded. Captures 3, 4 and 5 report 0.2.1 there,
+  but `integration_manifest.version` shows 0.2.2 and 0.2.3. 0.2.9b1 reads the manifest.
+
+### What this does and does not explain
+
+The 0.2.2 regression did not come from connection code: 0.2.1 and 0.2.2 have identical
+GATT code. Two hypotheses remain:
+
+- H1, lamp state: the lamp changed state between 09:04 and 09:25 and has dropped links
+  since, independent of the integration.
+- H2, connection path: the uncached proxy path fails with this lamp and the cached path
+  does not.
+
+H2 is supported by the long 0.2.1 sessions, which were probably cached (not observed).
+H2 is weakened by the second 0.2.2 connection at 09:26:56. That connection was probably
+cached and stopped within about 4.6 s. Log 1 is the only observed cached link, and the
+lamp did not answer the proxy filter on it. Neither hypothesis is proven.
+[link-test-procedure.md](link-test-procedure.md) separates them in one test.
+
+Sources:
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/bluetooth_connection/bluetooth_connection_bluedroid.cpp
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/bluetooth_connection/bluetooth_connection_hub.cpp
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/esp32_ble/ble.cpp
+- https://github.com/espressif/esp-idf/blob/release/v5.5/components/bt/host/bluedroid/api/include/api/esp_bt_defs.h
+- https://github.com/espressif/esp-idf/blob/release/v5.5/components/bt/host/bluedroid/btc/core/btc_util.c
+- https://github.com/espressif/esp-idf/blob/release/v5.5/components/bt/host/bluedroid/stack/l2cap/l2c_ble.c
+- https://github.com/espressif/esp-idf/blob/release/v5.5/components/bt/host/bluedroid/stack/l2cap/l2c_main.c
+- https://github.com/zhou-peter/Telink_SIG_Mesh_ADS50_LIGHT (mesh_common.c, `mesh_ble_connect_cb`)
+- https://github.com/telink-semi/tc_ble_mesh (current SDK: request 16, 32, 0, 500)
+- bleak-esphome 4.0.0 and bleak-retry-connector 4.7.1 source distributions (PyPI)
+- https://support.tuya.com/en/help/_detail/K9hut3w10nby8 (three toggles reset lighting products)
+
+## Test result 0.2.9b1: captures 16/17, proxy log 9 (2026-10-14)
+
+Procedure: [link-test-procedure.md](link-test-procedure.md). Times are UTC.
+
+### Passive network check
+
+`network_evidence` was `node_identity_match` in 4 of 4 checks, and no Unprovisioned
+Device packet was seen. The lamp holds our NetKey and advertises unicast address 0x00B0.
+Two probe reads at 13:46:56 received authenticated replies, so the NetKey and AppKey still
+work. Re-onboarding is not indicated by this evidence.
+
+### Links
+
+| Link | Type | Open | Lamp update 32/200 | Last lamp traffic | Loss | Lifetime |
+|---|---|---|---|---|---|---|
+| gen 1 | not in proxy log (probably uncached, first after restart) | 13:40:51 | not logged | notifications at +1.4 s | during proxy filter setup | 5.1 s |
+| gen 3 | cached | 13:43:54 | +1.33 s | none after the update | 0x08; CCCD write failed at update +1.98 s | 6.7 s |
+| gen 4 | cached | 13:46:56 | +1.06 s | notification at +0.51 s | 0x08 at update +2.27 s | 3.4 s |
+
+Probe summary: 9 reads, 2 responses (both on gen 4 within 0.51 s of the link opening),
+longest link 0.51 s at a response. Between links the lamp was unreachable for minutes
+(connect timeouts, "last advertisement 255 s / 339 s ago").
+
+### Evaluation against the procedure
+
+Cached and uncached links both stopped within 21 s. By the criterion fixed before the
+test, H2 (the uncached proxy path is the cause) is rejected. The connection policy of
+the integration does not explain the failure.
+
+### Pattern now observed three times
+
+In every link where the proxy log shows both the lamp-requested update to interval 32
+(40 ms), latency 0, timeout 200 (2 s) and a later loss (log 7, log 9 gen 3, log 9 gen 4),
+the loss occurred 2.0–2.5 s after the update. No lamp traffic is logged after the update.
+At 11.25 ms the same links carried notifications and authenticated replies. Two cached
+and one uncached link show this, so the pattern does not depend on the connection type.
+
+This is consistent with a loss of synchronisation at the update instant. The data does
+not show which side fails. Other losses (log 8) happened before the lamp update, so the
+update is not shown to be the only failure point.
+
+### Lamp sequence numbers
+
+The lamp's mesh SEQ went from 657 (09:04:53, last working session) to 683 (09:25:58, first
+failing session), and from 985 (11:18:20) to 1461 (13:46:55). The Telink reference SDK
+adds 0x80 to the saved SEQ at boot (`MESH_CMD_SNO_SAVE_DELTA`). Assuming the lamp firmware
+does the same (not verified), the lamp did not reboot between the last working and the
+first failing session. The 476 increase after 11:18 fits several reboots, which matches
+the power cycles during the beta test.
+
+### Remaining explanation
+
+H1 remains: since about 09:25 the lamp loses links, most visibly at its own parameter
+update, independent of the integration. Unknown: whether the lamp alone causes this, or
+the interaction between this lamp and the ESP32 controller. A connection from a different
+central (an iPhone, without keys and without mesh writes) separates these two.
+
+## Control link test from a Mac, attempt 1 (2026-10-14, 14:08–14:26 UTC)
+
+Central: MacBook (Apple BCM_4388 controller, macOS 26.6.2), `tools/control_link_test.py`.
+PacketLogger and the macOS Bluetooth profile were not installed, so link parameters are
+not visible. The user confirmed that "Orion 2" in old Smart Life data is the same lamp,
+so the only Mesh Proxy candidate is this lamp.
+
+| Time (UTC) | Observation |
+|---|---|
+| 14:08:23 | Seen, RSSI -65, Node Identity (scan only, no connection) |
+| 14:12:45–14:17:04 | Not seen in any scan window |
+| 14:17:34 | Seen, RSSI -43, new Node Identity random. Connect attempt: no connection in 20 s |
+| 14:18:24–14:19:55 | Not seen |
+| 14:20:25 | Seen, RSSI -46, new random. Connect attempt: no connection in 20 s |
+| 14:21:15–14:23:16 | Not seen |
+| 14:23:46 | Seen, RSSI -55, new random. Connect attempt: no connection in 20 s |
+| 14:24:36–14:26:07 | Not seen |
+
+Facts: the lamp advertised only in short windows, about every 171–201 s, each time with a
+new Node Identity random. Three of three connect attempts from the Mac did not establish a
+link. This matches the roughly 181 s random changes in capture 13.
+
+Not established: whether the FlinQ Orion integration (or another Home Assistant
+integration) made the ESPHome proxy connect first in those windows. If it did, the Mac
+attempts lost a race and say nothing about the lamp. If it did not, the lamp also refuses
+or drops connections from an Apple central, which points to the lamp (H1).
+
+## Control link test from a Mac, attempt 2 and passive monitor (2026-10-14)
+
+Conditions: the FlinQ Orion and Bluetooth Mesh (ha-bluetooth-mesh) integrations were
+both disabled (user confirmation). Bluetooth Mesh had been configured for the same lamp
+until about 14:28 UTC. It was therefore active during all earlier captures, and it can
+have opened proxy connections to the lamp at any time.
+
+### Attempt 2 (14:31–14:42 UTC)
+
+| Time (UTC) | Observation |
+|---|---|
+| 14:32:37 | Seen, RSSI -52, Node Identity. Connect attempt: no connection in 20 s |
+| 14:38:59 | Seen, RSSI -47, new random. Connect attempt: no connection in 20 s |
+| 14:41:50 | Seen, RSSI -47, new random. Connect attempt: no connection in 20 s |
+
+No Home Assistant integration competed. Six of six Mac attempts over both runs did not
+establish a link; three of them were in these clean conditions.
+
+### Passive monitor (14:44:46–14:52:48 UTC, no connection attempts by anyone)
+
+Method: 48 scan windows of 10 s. CoreBluetooth reports a device once per scan session, so
+each window is a new session. Control: 13 of 27 nearby devices were seen in 6 of 6
+windows, including a Tuya device at -73 dBm and devices near -95 dBm.
+
+Result: the lamp was seen in 1 of 48 windows (14:50:47, RSSI -47, connectable, Node
+Identity with a new random). It was not seen in the other 47 windows. The last connection
+attempt before the lamp reappeared was at 14:41:50, so the lamp stayed silent for about
+9 minutes without any attempt.
+
+### What this establishes
+
+- The lamp is silent most of the time, also when no Home Assistant integration, no ESP32
+  connection and no Mac connection is involved.
+- An Apple central did not get a link in 3 clean attempts.
+- The failure does not need the integration or the ESP32 proxy.
+
+Not established: whether the lamp is silent because it is in a fault state (for example a
+reset or recovery loop), or because another central outside Home Assistant connects to
+it when it advertises. A Telink peripheral does not advertise while it is connected.
+
+## Passive monitor 2: a 181 s cycle (2026-10-14, 15:03–15:18 UTC)
+
+Conditions as before: no Home Assistant integration active for the lamp, no connection
+attempts. 90 scan windows of 10 s.
+
+| Seen (UTC) | Interval | RSSI | Connectable | Node Identity random |
+|---|---|---|---|---|
+| 15:05:51 | | -43 | yes | new |
+| 15:09:01 | 190 s | -43 | yes | new |
+| 15:12:02 | 181 s | -42 | yes | new |
+| 15:15:03 | 181 s | -52 | yes | new |
+
+The lamp advertised in one 10 s window per cycle and was silent in between. The same
+period appears in earlier data: Node Identity random changes about every 181 s in capture
+13, and ESP32 links opened at 13:40:51, 13:43:53 and 13:46:56 (182 s and 183 s apart).
+
+### Interpretation (inference)
+
+In the Telink reference SDK of the 2020–2022 period, the Node Identity random is created
+only at boot (`mesh_init_all` calls `prov_random_proc`). It is refreshed at run time only
+in builds with private beacons (`MD_PRIVACY_BEA`, a Mesh 1.1 feature). If the lamp firmware
+follows the reference, a new random every 181 s means a new boot every 181 s.
+
+A boot loop explains the observations together:
+- links that stop 2–4 s after they open, independent of the central and of the cache;
+- long periods without advertising and without accepted connections;
+- Node Identity instead of Network ID: the 60 s Node Identity timer
+  (`mesh_switch_identity_proc`) needs the main loop to run for 60 s;
+- the provisioning GATT table seen once at 12:15.
+
+Not established: that the lamp reboots (no physical or serial evidence), why it started
+between 09:04 and 09:25 UTC, and whether any message from the FlinQ Orion or Bluetooth
+Mesh integration caused it. The lamp SEQ values do not fit a +0x80 saved step per boot,
+so the firmware does not persist SEQ like the reference at every boot, or it does not
+reboot. Both remain possible.
+
+## Observed power cycle and power source (2026-10-14, 15:21–15:34 UTC)
+
+The lamp is a solar lamp with a battery. Retail information gives a 3.7 V / 2200 mAh
+Li-ion battery, charged by the solar panel or USB-C in 2–3 hours, and advises USB-C
+charging when the lamp gets little sun (ANWB and MediaMarkt product pages). The Tuya
+status (2026-10-06 and 10-11) has `device_mode: auto` and `cds: 2000lux`, and no battery
+data point. In auto mode the light stays off in daylight, so "no light at power-on" is
+expected and is not a symptom.
+
+User actions (local time, minute resolution): off about 17:21, on 17:22, off 17:24,
+on 17:25. Physical observation: no light, no flicker; the green indicator on the back is
+on whenever the lamp is switched on.
+
+| Seen (UTC) | Interval |
+|---|---|
+| 15:22:12 | first window after the 17:22 power-on |
+| 15:25:13 | 181 s |
+| 15:28:13 | 180 s |
+| 15:31:14 | 181 s |
+
+Before the power cycle the cycle ran at 15:15:03 + n × 181 s, so the next sighting would
+have been near 15:21:05. The 15:22:12 sighting follows the power-on instead. The first
+power cycle therefore moved the phase: the cycle is a timer that starts at boot. The
+second power cycle (17:24–17:25) fell in phase by coincidence or within the minute
+resolution, so it adds no evidence.
+
+### Working hypothesis H4: low battery
+
+A depleted battery that puts the lamp into a duty-cycled low-power mode (wake about every
+180 s, advertise briefly, sleep) explains the cycle, the new random per wake (a Telink
+deep-sleep wake runs `mesh_init_all` again), the Node Identity advertising and the short
+links. The failures began after hours of connection attempts by `tuya_ble_mesh`, Bluetooth
+Mesh and FlinQ Orion, in October, on an outdoor solar lamp. No manufacturer source for a
+low-battery mode was found. Test: full USB-C charge, then a passive monitor, then
+`probe_link` with only FlinQ Orion enabled. The user started USB-C charging at about
+17:31 local; the 15:31:14 sighting and the silence until 15:33:54 do not show a change yet.
+
+## While charging over USB-C (2026-10-14, 15:35–15:44 UTC)
+
+Same Mac, same position, same method, no Home Assistant integration active.
+
+| Measurement | Before charging (14:31–15:34) | While charging (15:35–15:44) |
+|---|---|---|
+| Advertising | 1 of 48 and 4 of 90 windows of 10 s | 25 of 30 windows |
+| Proxy identity | Node Identity, new random every ~181 s | Network ID `cd4830e47e41576f` (as in the working 0.2.1 sessions) |
+| Mac connection | 0 of 6 attempts connected | Connected in 3.0 s, kept for 181 s, 18 of 18 reads OK (about 50 ms) |
+
+The Network ID equals the value recorded in the working morning sessions. The firmware
+revision characteristic returns `\x00\x005151\x00\x00\x00`. No 0x2ADE notification arrived
+on the Mac link in 181 s; the cause is unknown and does not affect the link result.
+
+Conclusion (one observation each): with external power the lamp left the 181 s cycle,
+advertised its Network ID and kept a link from an Apple central for the full test. This
+strongly supports H4 (battery or power state) as the cause of the failures since about
+09:25 UTC. It does not yet show that the Home Assistant path works; the next step is
+`probe_link` with only FlinQ Orion enabled.
+
+## probe_link with only FlinQ Orion enabled (capture 18, 2026-10-14, 16:53–17:08 UTC)
+
+Bluetooth Mesh stayed disabled. The lamp had been charged over USB-C before this run;
+whether it was still on the charger during the run is not recorded.
+
+- 16:53–17:00: no link. HA reported "no scanner currently has it in its discovered
+  devices", then connect timeouts.
+- 17:00:20: link open, setup 0.88 s, `network_evidence` `network_id_match`.
+- The link stayed up for the full probe (491.6 s at the last read) and was still connected
+  when diagnostics were downloaded.
+- 51 OnOff Get reads: 41 answered within the 2 s probe timeout, 10 timed out. The packet
+  buffer (last 17 reads) shows that timed-out reads were answered late, at 3.9 s and 4.4 s.
+  Latency in that window: 0.16–4.4 s, median about 0.6 s. The morning 0.2.1 sessions
+  showed 0.1–0.25 s.
+- Ten of twelve reads between 17:04:23 and 17:06:13 exceeded 2 s. After that latency
+  returned to 0.16–1.3 s.
+
+Conclusion: with a charged lamp, one Home Assistant link through the ESPHome proxy was
+stable for at least 8 minutes, and every read was answered. Response time varies
+strongly. Not established: where the delay arises (lamp application, radio link, or
+ESP32 to Home Assistant transfer). A proxy log with `esp32_ble` at VERBOSE shows the
+ESP32 notification times and separates these.
+
+## Data point map from the Tuya cloud schema (PID 1ajecbtl)
+
+Source: the Home Assistant Tuya integration diagnostics of 2026-10-06 and 2026-10-11,
+field `local_strategy` (DP id to code) and `status_range`. This is the product
+definition. The SIG mesh wire encoding of each DP is not yet confirmed on the lamp.
+
+| DP | Code | Type | Range |
+|---|---|---|---|
+| 1 | switch_led | Boolean | |
+| 2 | work_mode | Enum | white, colour, scene, music |
+| 3 | bright_value | Integer | 10–1000 |
+| 4 | temp_value | Integer | 0–1000 |
+| 5 | colour_data | Json | `dj_v2_color_alg` |
+| 6 | scene_data | Json | `dj_v2_scene_alg` |
+| 7 | countdown | Integer | 0–86400 (unit not stated, expected seconds) |
+| 51 | device_mode | Enum | auto, manual |
+| 52 | pir_state | Enum | pir, none (status only, meaning not confirmed) |
+| 53 | cds | Enum | 2000lux, 300lux, 50lux, 10lux, 5lux |
+| 54 | pir_sensitivity | Enum | low, middle, high |
+| 55 | pir_delay | Integer | 5–3600 s |
+| 56 | switch_pir | Boolean | |
+| 58 | standby_time | Integer | 1–480 min |
+| 59 | standby_bright | Integer | 0–1000 |
+
+There is no battery, charging or lux measurement data point. The cloud status on
+2026-10-06 was: switch_led false, work_mode white, bright_value 10, temp_value 0,
+countdown 0, device_mode auto, pir_state pir, cds 2000lux, pir_sensitivity low,
+pir_delay 5, switch_pir false, standby_time 1, standby_bright 0.
+
+## Vendor DP reports go to another destination (captures 0 and 1)
+
+After the first vendor DP query (0xCC) of a connection, the lamp sent 7 (capture 0) and
+10 (capture 1) network messages that our proxy filter did not forward, and 1.7 s later
+answered us with 0xCD `01` and no DP data. After a second query on the same connection it
+sent no hidden messages and answered in 0.16 s. The filter forwards only destination
+0x0002. Capture 0 also shows one lamp message to group 0xD000 at connection start.
+
+Hypothesis (two of two cases): the lamp publishes its DP report, probably segmented, to
+another address (for example group 0xD000 or the old controller address), and only
+acknowledges the query to us. Test: a session with the proxy filter set to accept all
+destinations (connection scoped, no change to the lamp configuration).
+
+## How users get the mesh keys (desk research, 2026-10-14)
+
+Desk research only: public source code and Tuya documentation. No login, no test on a lamp.
+
+**`tuya_ble_mesh` makes its own keys.** Repository 11z4t/tuya-ble-mesh, tag v0.38.1
+(commit 4bf7e41). Verified in the source:
+
+- `config_flow_sig.py` creates the NetKey and AppKey with `os.urandom(16)` and provisions the
+  lamp itself over PB-GATT with No OOB. The DeviceKey comes from that provisioning.
+- It stores controller address 0x0001 (`unicast_our`) and lamp address 0x00B0
+  (`unicast_target`) as defaults. These are the values that our import found, so the keys of
+  this lamp were most likely made by `tuya_ble_mesh`, not by Tuya (inference).
+- The code contains no Tuya cloud call and no manual key entry for SIG devices.
+- In v0.38.1 the AppKey Add call uses a wrong method name (`send_config_app_key_add`; the
+  method is `send_config_appkey_add`). A broad `except` hides the error. Pull request #3
+  reports the same bug. How the lamp got its AppKey binding is therefore unknown.
+
+**Tuya cloud.** The SDK that Home Assistant's Tuya integration uses (tuya-device-sharing-sdk
+0.2.15) has no mesh key fields. Tuya's Android Smart App SDK has `SigMeshBean` with
+`getNetWorkkey()` and `getAppkey()`, per home, for apps built on that SDK only. No open-source
+tool was found that reads SIG Mesh keys from the Tuya cloud. Tuya documents that only the node
+and the provisioner know the DeviceKey.
+
+**Provisioning without the Tuya app.** Tuya documents that configuration must finish within
+30 s after provisioning, and that unauthorised devices fail cloud registration (not local
+use). Reports on 2 to 4 other Tuya SIG Mesh devices show local control after provisioning
+with No OOB. None of them is an Orion.
+
+**Unprovisioned UUID (Tuya BLE Mesh specification).** MAC (6 bytes) + mesh category (2 bytes)
++ PID (8 ASCII bytes). For this lamp, bytes 8 to 15 would be `1ajecbtl` (inference, not
+observed). The byte order of the category differs between two Tuya pages.
+
+**Routes for other users.** (1) Provisioning in this integration: factory reset, random keys,
+AppKey Add and model binding within 30 s; the lamp then leaves Smart Life; not tested on the
+Orion. (2) Keep the `tuya_ble_mesh` import and manual entry (current state). (3) An app on the
+Tuya Smart App SDK: high effort, terms unknown, no DeviceKey. (4) The reverse-engineered
+Smart Life API: no known mesh key endpoint; not recommended.
+
+Sources: github.com/11z4t/tuya-ble-mesh (v0.38.1, pull request #3);
+github.com/tuya/tuya-device-sharing-sdk (0.2.15);
+tuya.github.io/tuya-home-android-sdk-api-reference (SigMeshBean);
+developer.tuya.com: meshsig (Ka6km4aeuygxr), mesh provisioning (Kd5wkuunhsjtq), mesh
+capabilities (Kd5wlb84e6c0o), TLSR825x mesh light (Kce4nmogrxe0c), BLE Mesh protocol
+specification (K9ik5884f3in9).
+
+## First run of 0.4.0b1 (device diagnostics, 2026-10-14, 19:07–19:16 UTC)
+
+One observation, one lamp.
+
+- Migration: one network entry, one lamp subentry, one device with 5 entities. Mesh address
+  176, controller address 2; the sequence continued (next 3883, no store failure).
+- Control: 12 Generic OnOff Set commands (19:10:09–19:16:09) were each confirmed by an OnOff
+  Status from 176 within 0.2–1.3 s.
+- Start-up: the first connection attempt (19:07:39) failed with "No backend with an available
+  connection slot ... 0 scanner(s) registered": the ESPHome proxy was not registered yet after
+  the restart. The next attempt (19:08:40) opened a link after 19 s.
+- Dead link: after the last confirmed command (19:10:42) a status query at about 19:11:47
+  timed out on all five reads while the link was still open. The link closed on idle at
+  19:12:57. A connection attempt at 19:13:17 left no result in the diagnostics, because a
+  failed connection for a command is not recorded. The attempt at 19:14:56 opened a link in 3 s.
+- After the link setup at 19:14:59 the lamp sent six Tuya vendor messages, opcode 0xCA (write
+  unacknowledged in our opcode table), payload `8b01`, to the all-nodes address 0xFFFF, with
+  many retransmissions. Meaning unknown. In both status refreshes the first read (OnOff Get,
+  2 s timeout) timed out and the later reads answered. Hypothesis, not tested: the lamp is busy
+  with these broadcasts directly after the link setup.
+- The vendor status query still returns an empty DP report (`01`).

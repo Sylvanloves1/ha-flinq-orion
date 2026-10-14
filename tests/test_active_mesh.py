@@ -13,7 +13,7 @@ from custom_components.flinq_orion.protocol.transmit import (
     segment_ack,
     decode_ack,
 )
-from custom_components.flinq_orion.protocol.controller import MeshController
+from custom_components.flinq_orion.protocol.controller import MeshController, REJECT_LIST
 from custom_components.flinq_orion.protocol.sequence import SequenceAllocator
 from custom_components.flinq_orion.protocol.replay import ReplayProtection
 from custom_components.flinq_orion.protocol.access import decode_access
@@ -25,8 +25,9 @@ from custom_components.flinq_orion.protocol.vendor_tuya import (
     READ,
     WRITE,
     opcode,
+    query,
 )
-from custom_components.flinq_orion.protocol.errors import MeshError
+from custom_components.flinq_orion.protocol.errors import MeshError, MeshTimeoutError, TuyaDPError
 from custom_components.flinq_orion.device import OrionDevice
 from custom_components.flinq_orion.device_profiles import DeviceCapabilities
 
@@ -59,12 +60,25 @@ class Peer:
         self.dps = {
             1: DP(1, 1, b"\x00"),
             3: DP(3, 2, (750).to_bytes(4, "big")),
-            54: DP(54, 2, (30).to_bytes(4, "big")),
+            54: DP(54, 4, b"\x00"),
         }
+        self.filter_type = 0
+        # None: report to the requester. A group address: publish the report there and
+        # only acknowledge the requester with an empty DP report, as the Orion does.
+        self.report_destination = None
+        self.acknowledge_requester = True
+        self.address = 176
 
-    def message(self, lower, *, ctl=False, proxy=False):
+    def message(self, lower, *, ctl=False, proxy=False, destination=1):
         m = NetworkMessage(
-            self.codec.nid, 0, ctl, 0 if proxy else 5, self.seq, 176, 0 if proxy else 1, lower
+            self.codec.nid,
+            0,
+            ctl,
+            0 if proxy else 5,
+            self.seq,
+            self.address,
+            0 if proxy else destination,
+            lower,
         )
         self.seq += 1
         return self.codec.encode(m, proxy=proxy)
@@ -77,8 +91,12 @@ class Peer:
         msg = self.codec.decode(pdu, 0, proxy=kind == 2)
         self.received.append(msg)
         if kind == 2:
-            count = 0 if msg.lower[0] == 0 else 1
-            self.inject(2, self.message(bytes((3, 0, 0, count)), ctl=True, proxy=True))
+            if msg.lower[0] == 0:
+                self.filter_type, count = msg.lower[1], 0
+            else:
+                count = 1
+            status = bytes((3, self.filter_type, 0, count))
+            self.inject(2, self.message(status, ctl=True, proxy=True))
             return
         if msg.ctl:
             self.acks.append(decode_ack(msg.lower))
@@ -103,13 +121,18 @@ class Peer:
                 payload = (
                     opcode(DATA) + b"\x01" + b"".join(encode_dp(dp) for dp in self.dps.values())
                 )
-                await self.report(payload)
+                if self.report_destination is None:
+                    await self.report(payload)
+                else:
+                    await self.report(payload, self.report_destination)
+                    if self.acknowledge_requester:
+                        await self.report(opcode(DATA) + b"\x01")
 
-    async def report(self, payload):
+    async def report(self, payload, destination=1):
         first = self.seq
-        encrypted = encode_upper(payload, APP, first, 176, 1, 0)
+        encrypted = encode_upper(payload, APP, first, self.address, destination, 0)
         for lower in lower_segments(encrypted, APP, first):
-            self.inject(0, self.message(lower))
+            self.inject(0, self.message(lower, destination=destination))
 
     async def finish(self):
         if self.tasks:
@@ -150,7 +173,8 @@ async def test_proxy_filter_and_vendor_power_no_optimistic_state():
     await device.query()
     assert device.supports_power and device.supports_brightness
     assert device.dp(1)["value"] is False
-    assert device.coordinator.capabilities.unknown_dps["54"]["value"] == 30
+    assert peer.filter_type == REJECT_LIST  # accept every destination on this link
+    assert device.setting(54) == "low"
     await device.set_power(True)
     assert device.dp(1)["value"] is True
     await peer.finish()
@@ -191,13 +215,37 @@ async def test_replayed_report_does_not_restore_old_power():
 
 
 @pytest.mark.asyncio
-async def test_unknown_dp_write_always_blocked():
+async def test_settings_are_written_only_within_the_schema():
     peer, controller, device, allocator, replay = await make_system()
     await device.query()
     with pytest.raises(MeshError):
-        await device.write_dp(DP(54, 2, (1).to_bytes(4, "big")))
-    assert peer.dps[54].value == 30
+        await device.write_dp(DP(54, 4, b"\x02"))  # light DPs only
+    await device.write_setting(54, "high")
+    assert peer.dps[54] == DP(54, 4, b"\x02") and device.setting(54) == "high"
+    for identifier, value, error in (
+        (54, "loud", TuyaDPError),
+        (55, 4, TuyaDPError),
+        (55, True, TuyaDPError),
+        (52, "pir", MeshError),
+        (99, 1, MeshError),
+    ):
+        with pytest.raises(error):
+            await device.write_setting(identifier, value)
+    assert peer.dps[54] == DP(54, 4, b"\x02") and 55 not in peer.dps
     await peer.finish()
+
+
+@pytest.mark.asyncio
+async def test_reports_published_to_a_group_are_read_but_not_acknowledged():
+    peer, controller, device, allocator, replay = await make_system()
+    peer.report_destination = 0xD000
+    peer.dps[56] = DP(56, 1, b"\x00")
+    await device.query()
+    assert device.setting(56) is False and device.dp(1)["value"] is False
+    await device.write_setting(56, True)
+    assert device.setting(56) is True
+    await peer.finish()
+    assert peer.acks == []  # segmented group reports are never acknowledged
 
 
 @pytest.mark.asyncio
@@ -245,3 +293,26 @@ async def test_empty_vendor_report_is_a_response_not_a_timeout():
     assert not device.supports_power
     assert device.coordinator.record.call_args.args[0]["result"] == "empty_dp_report"
     await peer.finish()
+
+
+@pytest.mark.asyncio
+async def test_reply_to_another_controller_updates_state_but_does_not_answer_us():
+    peer, controller, device, allocator, replay = await make_system()
+    peer.report_destination = 0x0005
+    peer.acknowledge_requester = False
+    controller.requested = True  # not the first request of the link: keep the short timeout
+    with pytest.raises(MeshTimeoutError):
+        await controller.request(query((0,)), lambda response: True, timeout=0.3)
+    await peer.finish()
+    assert device.dp(1)["value"] is False  # read from the reply to 0x0005
+    assert peer.acks == []
+
+
+@pytest.mark.asyncio
+async def test_first_request_of_a_link_waits_longer():
+    peer, controller, device, allocator, replay = await make_system()
+    controller.channel.request = AsyncMock(return_value="response")
+    await controller.request(b"\x82\x01", lambda response: True, timeout=2)
+    await controller.request(b"\x82\x01", lambda response: True, timeout=2)
+    timeouts = [call.kwargs["timeout"] for call in controller.channel.request.await_args_list]
+    assert timeouts == [5, 2]

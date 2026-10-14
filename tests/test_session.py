@@ -8,7 +8,7 @@ from custom_components.flinq_orion.const import PROXY_SERVICE, PROXY_IN, PROXY_O
 from custom_components.flinq_orion.coordinator import OrionCoordinator
 from custom_components.flinq_orion.session import MeshSession
 from custom_components.flinq_orion.protocol.proxy import ProxySAR
-from custom_components.flinq_orion.protocol.errors import MeshError
+from custom_components.flinq_orion.protocol.errors import DeviceUnavailableError, MeshError
 from test_active_mesh import Peer, NET, APP
 
 
@@ -66,26 +66,8 @@ class Client:
 
 @pytest.mark.asyncio
 async def test_active_gatt_connect_reports_and_reconnect(tmp_path):
-    hass = HomeAssistant(str(tmp_path))
-    entry = Mock()
-    entry.entry_id = "test"
-    entry.data = {"address": "DC:23:4F:6E:A0:12"}
-    entry.options = {
-        "transport_mode": "vendor_dp",
-        "net_key": NET.hex(),
-        "app_key": APP.hex(),
-        "source_address": 1,
-        "node_address": 176,
-        "new_source_confirmed": True,
-        "iv_index": 0,
-    }
-    hass.config_entries = SimpleNamespace(
-        async_update_entry=lambda entry, **kwargs: entry.data.update(kwargs.get("data", {}))
-    )
-    c = OrionCoordinator(hass, entry)
-    s = MeshSession(c)
-    c.session = s
-    await s.initialize()
+    c, s = await started_session(tmp_path)
+    hass = c.hass
     peer = Peer()
     client = Client(peer)
     bad_client = Client(peer)
@@ -100,21 +82,24 @@ async def test_active_gatt_connect_reports_and_reconnect(tmp_path):
         patch("custom_components.flinq_orion.session.establish_connection", connector),
     ):
         try:
-            with pytest.raises(ConnectionError):
-                await s.ensure_connection()
+            with pytest.raises(DeviceUnavailableError, match="battery") as unreachable:
+                await s.ensure_connection(c)
+            assert isinstance(unreachable.value.__cause__, ConnectionError)
             with pytest.raises(MeshError, match="notification setup failed"):
-                await s.ensure_connection()
-            bad_client.clear_cache.assert_awaited_once()
+                await s.ensure_connection(c)
+            # A setup failure must not force the next connection onto the uncached path.
+            bad_client.clear_cache.assert_not_awaited()
             assert not bad_client.is_connected
             assert not s.connected
             assert any(
                 record.get("stage") == "subscribe_proxy_notifications"
                 and record["kind"] == "connection_error"
-                for record in c.records
+                and record["link_lifetime_s"] >= 0
+                for record in s.log.connection_history
             )
-            await s.ensure_connection()
+            await s.ensure_connection(c)
             assert s.connected
-            assert connector.call_args.kwargs["use_services_cache"] is False
+            assert "use_services_cache" not in connector.call_args.kwargs
             await c.device.query()
             assert c.device.supports_power
             await c.device.set_power(True)
@@ -126,7 +111,7 @@ async def test_active_gatt_connect_reports_and_reconnect(tmp_path):
             fresh = Client(peer)
             connector.side_effect = None
             connector.return_value = fresh
-            await s.ensure_connection()
+            await s.ensure_connection(c)
             await c.device.query()
             assert s.connected and c.device.dp(1)["value"] is True
         finally:
@@ -134,6 +119,111 @@ async def test_active_gatt_connect_reports_and_reconnect(tmp_path):
             await c.stop()
     assert all(len(data) <= 20 for data in client.written)
     assert s.rx_worker.done()
+
+
+async def started_session(tmp_path, **options):
+    """A network entry that also describes its one lamp, as before 0.4.0."""
+    hass = HomeAssistant(str(tmp_path))
+    entry = Mock()
+    entry.entry_id = "test"
+    entry.data = {"address": "DC:23:4F:6E:A0:12"}
+    entry.options = {
+        "transport_mode": "vendor_dp",
+        "net_key": NET.hex(),
+        "app_key": APP.hex(),
+        "source_address": 1,
+        "node_address": 176,
+        "new_source_confirmed": True,
+        "iv_index": 0,
+        **options,
+    }
+    hass.config_entries = SimpleNamespace(
+        async_update_entry=lambda entry, **kwargs: entry.data.update(kwargs.get("data", {}))
+    )
+    c = OrionCoordinator(hass, entry)
+    s = MeshSession(hass, entry)
+    await s.initialize()
+    s.attach(c)
+    return c, s
+
+
+def patched_connection(connector):
+    return (
+        patch(
+            "custom_components.flinq_orion.session.bluetooth.async_ble_device_from_address",
+            return_value=object(),
+        ),
+        patch("custom_components.flinq_orion.session.establish_connection", connector),
+    )
+
+
+class NoProxyServices(Services):
+    def get_service(self, uuid):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_only_a_table_without_proxy_service_clears_the_gatt_cache(tmp_path):
+    c, s = await started_session(tmp_path)
+    stale = Client(Peer())
+    stale.services = NoProxyServices()
+    stale.clear_cache = AsyncMock(return_value=True)
+    device_patch, connect_patch = patched_connection(AsyncMock(return_value=stale))
+    try:
+        with device_patch, connect_patch:
+            with pytest.raises(MeshError, match="0x1828"):
+                await s.ensure_connection(c)
+        stale.clear_cache.assert_awaited_once()
+        assert {"kind": "gatt_cache_clear", "cleared": True}.items() <= s.log.records[-1].items()
+    finally:
+        await s.stop()
+        await c.stop()
+
+
+@pytest.mark.asyncio
+async def test_link_lifetime_survives_packet_records_and_probe_measures_each_read(tmp_path):
+    c, s = await started_session(tmp_path)
+    client = Client(Peer())
+    device_patch, connect_patch = patched_connection(AsyncMock(return_value=client))
+    try:
+        with device_patch, connect_patch:
+            # The window allows several reads on a slow CI runner; the first read also connects.
+            summary = await s.probe_link(c, seconds=0.5, interval=0.01)
+            assert summary["probes"] >= 2
+            assert summary["responses"] == summary["probes"]
+            assert summary["links_used"] == 1 and summary["longest_link_s"] >= 0
+            for n in range(150):
+                s.record({"kind": "proxy", "n": n})
+            s._disconnected(client)
+        kinds = [record["kind"] for record in s.log.connection_history]
+        assert kinds[:3] == ["connect_attempt", "link_open", "connection_setup"]
+        assert "connection_ready" in kinds
+        assert "link_probe" in [record["kind"] for record in c.connection_history]
+        disconnected = s.log.connection_history[-1]
+        assert disconnected["kind"] == "disconnected"
+        assert disconnected["stage"] == "ready" and disconnected["link_lifetime_s"] >= 0
+        assert all(record["kind"] in ("proxy", "disconnected") for record in s.log.records)
+    finally:
+        await s.stop()
+        await c.stop()
+
+
+@pytest.mark.asyncio
+async def test_probe_records_failures_and_continues(tmp_path):
+    c, s = await started_session(tmp_path)
+    device_patch, connect_patch = patched_connection(
+        AsyncMock(side_effect=ConnectionError("offline"))
+    )
+    try:
+        with device_patch, connect_patch:
+            summary = await s.probe_link(c, seconds=0.3, interval=0.01)
+        assert summary["responses"] == 0
+        assert summary["failures"] == {"DeviceUnavailableError": summary["probes"]}
+        assert summary["links_used"] == 0 and summary["probes"] >= 2
+        assert c.data["command_failures"] == 0
+    finally:
+        await s.stop()
+        await c.stop()
 
 
 @pytest.mark.asyncio
@@ -153,12 +243,11 @@ async def test_missing_sequence_store_after_initialization_blocks_restart(tmp_pa
     hass.config_entries = SimpleNamespace(
         async_update_entry=lambda entry, **kwargs: entry.data.update(kwargs.get("data", {}))
     )
-    c = OrionCoordinator(hass, entry)
-    s = MeshSession(c)
+    s = MeshSession(hass, entry)
     await s.initialize()
     await s.stop()
     await hass.async_add_executor_job(s.store.path.unlink)
-    restarted = MeshSession(c)
+    restarted = MeshSession(hass, entry)
     with pytest.raises(MeshError):
         await restarted.initialize()
     await restarted.stop()
@@ -169,6 +258,7 @@ def test_connection_error_preserves_nested_cause_and_redacts_keys_and_addresses(
 
     session = object.__new__(MeshSession)
     session.entry = SimpleNamespace(options={"net_key": NET.hex()})
+    session.lamps = []
     cause = TimeoutError("Timeout waiting for connection slot on DC:23:4F:6E:A0:12")
     error = BleakOutOfConnectionSlotsError(f"Failed on DC:23:4F:6E:A0:12 {NET.hex()}")
     error.__cause__ = cause
@@ -177,3 +267,29 @@ def test_connection_error_preserves_nested_cause_and_redacts_keys_and_addresses(
     assert result["causes"][1]["message"].startswith("Timeout waiting for connection slot")
     assert NET.hex() not in str(result)
     assert "DC:23:4F:6E:A0:12" not in str(result)
+
+
+@pytest.mark.asyncio
+async def test_failed_connection_for_a_command_is_recorded(tmp_path):
+    c, s = await started_session(tmp_path)
+    device_patch, connect_patch = patched_connection(
+        AsyncMock(side_effect=ConnectionError("offline"))
+    )
+    try:
+        with device_patch, connect_patch:
+            with pytest.raises(DeviceUnavailableError):
+                await c.device.query()
+        failed = [r for r in s.log.connection_history if r["kind"] == "connection_error"]
+        assert len(failed) == 1
+        assert failed[0]["error"] == "DeviceUnavailableError"
+        assert failed[0]["causes"][1]["error"] == "ConnectionError"
+        with patch(
+            "custom_components.flinq_orion.session.bluetooth.async_ble_device_from_address",
+            return_value=None,
+        ):
+            with pytest.raises(DeviceUnavailableError, match="No connectable"):
+                await s.ensure_connection(c)
+        assert s.log.connection_history[-1]["kind"] == "connection_error"
+    finally:
+        await s.stop()
+        await c.stop()

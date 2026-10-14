@@ -24,10 +24,12 @@ class ReplayWindow:
 
 
 class AccessReceiver:
-    def __init__(self, app_key: bytes, device_key: bytes | None = None):
+    def __init__(self, app_key: bytes, device_key: bytes | dict[int, bytes] | None = None):
+        """device_key: one key, or {source unicast address: key} for several lamps."""
         if len(app_key) != 16:
             raise ValueError("AppKey must be 128 bits")
-        if device_key is not None and len(device_key) != 16:
+        keys = device_key.values() if isinstance(device_key, dict) else [device_key]
+        if any(key is not None and len(key) != 16 for key in keys):
             raise ValueError("Device key must be 128 bits")
         self.app_key, self.aid = app_key, k4(app_key)
         self.device_key = device_key
@@ -47,9 +49,14 @@ class AccessReceiver:
             raise MeshError("Empty lower transport")
         device = not bool(lower[0] & 64)
         if device:
-            if lower[0] & 63 or self.device_key is None:
+            source_key = (
+                self.device_key.get(msg.src)
+                if isinstance(self.device_key, dict)
+                else self.device_key
+            )
+            if lower[0] & 63 or source_key is None:
                 raise MeshError("Device key unavailable or invalid AKF/AID")
-            key_material = self.device_key
+            key_material = source_key
         else:
             if lower[0] & 63 != self.aid:
                 raise MeshError("AID mismatch")

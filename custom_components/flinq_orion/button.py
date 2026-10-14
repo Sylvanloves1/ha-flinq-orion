@@ -1,13 +1,14 @@
 from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.exceptions import HomeAssistantError
-from .entity import OrionEntity
+from .entity import OrionEntity, lamps
 from .protocol.errors import FlinqOrionError
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    if entry.runtime_data.coordinator.device.mode != "observe":
-        async_add_entities([OrionQuery(entry.runtime_data.coordinator)])
+    for subentry_id, coordinator in lamps(entry):
+        if coordinator.device.mode != "observe":
+            async_add_entities([OrionQuery(coordinator)], config_subentry_id=subentry_id)
 
 
 class OrionQuery(OrionEntity, ButtonEntity):

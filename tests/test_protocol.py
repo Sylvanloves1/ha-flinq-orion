@@ -58,10 +58,12 @@ def test_malformed(raw):
 
 def test_unknown_dp():
     c = DeviceCapabilities()
-    dp = decode_report(bytes.fromhex("0136020000001e"))[0]
-    c.observe(dp)
-    assert c.unknown_dps["54"]["value"] == 30
-    assert not c.known_dps
+    # DP 57 is not in the Orion schema; DP 54 (pir_sensitivity) is.
+    unknown, known = decode_report(bytes.fromhex("0139020000001e" + "360401"))
+    c.observe(unknown)
+    c.observe(known)
+    assert c.unknown_dps == {"57": {"type": 2, "raw": "0000001e", "value": 30}}
+    assert c.known_dps == {"54": {"type": 4, "raw": "01", "value": 1}}
 
 
 def test_brightness():

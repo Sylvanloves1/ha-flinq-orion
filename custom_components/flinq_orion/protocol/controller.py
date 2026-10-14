@@ -10,6 +10,14 @@ from .transport import AccessReceiver, ReplayWindow
 from .transmit import encode_upper, lower_segments, segment_ack, decode_ack
 from .errors import MeshError, MeshTimeoutError
 
+# Proxy configuration Set Filter Type: 0x00 accept (white) list, 0x01 reject (black) list.
+REJECT_LIST = 0x01
+# Group addresses are 0xC000–0xFFFF (unicast up to 0x7FFF, virtual 0x8000–0xBFFF).
+GROUP_ADDRESS_START = 0xC000
+# The Orion answered the first query of a link after 1.7 s (captures 0 and 1). On
+# 2026-10-14 the first read of both refreshes timed out at 2 s and the later reads answered.
+FIRST_REQUEST_TIMEOUT = 5
+
 
 @dataclass(frozen=True)
 class Response:
@@ -36,8 +44,12 @@ class MeshController:
         on_response,
         log,
     ):
-        if not 1 <= source <= 0x7FFF or not 1 <= node <= 0x7FFF or source == node:
+        # node: the lamp acting as proxy; None until its Proxy Filter Status reveals it.
+        if not 1 <= source <= 0x7FFF or (
+            node is not None and (not 1 <= node <= 0x7FFF or source == node)
+        ):
             raise MeshError("Invalid controller/node address")
+        # device_key: one key, or {unicast address: key} for several lamps.
         self.codec, self.app_key, self.device_key = codec, app_key, device_key
         self.source, self.node, self.iv_index = source, node, iv_index
         self.allocator, self.replay = allocator, replay
@@ -52,8 +64,14 @@ class MeshController:
         self.completed: OrderedDict[tuple, tuple[int, int, int]] = OrderedDict()
         self.closed = False
         self.destination = node
-        self.allowed_sources = {node}
+        self.allowed_sources = {node} if node is not None else set()
         self.device_command = False
+        self.requested = False
+
+    def _device_key_for(self, address):
+        if isinstance(self.device_key, dict):
+            return self.device_key.get(address)
+        return self.device_key
 
     def _ready(self):
         if self.closed or self.replay.failed:
@@ -89,27 +107,35 @@ class MeshController:
             return seq
 
     async def configure_filter(self):
-        for lower, expected_count in (
-            (b"\x00\x00", 0),
-            (b"\x01" + self.source.to_bytes(2, "big"), 1),
-        ):
+        """Return the proxy lamp's unicast address: the source of its Proxy Filter Status.
+
+        Reject list with no entries: the proxy forwards every destination. The lamp
+        publishes its DP reports to another address (docs/protocol.md). The filter only
+        applies to this connection and does not change the lamp configuration.
+        """
+        proxy_source = None
+        for lower, expected in ((bytes((0, REJECT_LIST)), (REJECT_LIST, 0)),):
             future = asyncio.get_running_loop().create_future()
-            self.filter_future = future, expected_count
+            self.filter_future = future, expected
             try:
                 await self._network(lower, ctl=True, proxy=True)
                 async with asyncio.timeout(5):
-                    await future
+                    proxy_source = await future
             except TimeoutError as err:
                 raise MeshTimeoutError("No authenticated Proxy Filter Status") from err
             finally:
                 self.filter_future = None
                 if not future.done():
                     future.cancel()
+        if self.node is None and proxy_source is not None:
+            self.node = self.destination = proxy_source
+            self.allowed_sources.add(proxy_source)
+        return proxy_source
 
     async def send_access(self, payload: bytes):
         self._ready()
         device = self.device_command
-        key = self.device_key if device else self.app_key
+        key = self._device_key_for(self.destination) if device else self.app_key
         if key is None:
             raise MeshError("Device key required")
         async with self.wire_lock:
@@ -150,7 +176,7 @@ class MeshController:
                     "src": self.source,
                     "dst": self.destination,
                     "opcode": decode_access(payload).opcode,
-                    "device_key": device,
+                    "uses_device_key": device,
                     "segments": len(parts),
                 }
             )
@@ -190,10 +216,17 @@ class MeshController:
         # Both the key choice and request/response matching are serialized.
         async with self.request_lock:
             self.destination = destination or self.node
-            if not 1 <= self.destination <= 0x7FFF or self.destination == self.source:
+            if (
+                self.destination is None
+                or not 1 <= self.destination <= 0x7FFF
+                or self.destination == self.source
+            ):
                 raise MeshError("Commands require a distinct valid unicast destination")
             self.allowed_sources.add(self.destination)
             self.device_command = device
+            if not self.requested:
+                self.requested = True
+                timeout = max(timeout, FIRST_REQUEST_TIMEOUT)
             try:
                 return await self.channel.request(
                     payload, matcher, timeout=timeout, retries=retries, idempotent=bool(retries)
@@ -230,13 +263,18 @@ class MeshController:
                 # Config responses may originate at the selected mesh proxy server.
                 if not await self.replay.accept(msg.iv_index, msg.src, msg.seq):
                     return
-                if len(msg.lower) == 4 and msg.lower[:2] == b"\x03\x00" and self.filter_future:
-                    future, count = self.filter_future
-                    if int.from_bytes(msg.lower[2:], "big") == count and not future.done():
-                        future.set_result(msg.lower)
+                if len(msg.lower) == 4 and msg.lower[0] == 3 and self.filter_future:
+                    future, (kind_expected, count) = self.filter_future
+                    status = msg.lower[1], int.from_bytes(msg.lower[2:], "big")
+                    if status == (kind_expected, count) and not future.done():
+                        future.set_result(msg.src)
                 return
-            if msg.src not in self.allowed_sources or msg.dst != self.source:
+            if msg.src not in self.allowed_sources:
                 return
+            # Messages to other destinations (published reports) are read, never acknowledged.
+            for_us = msg.dst == self.source
+            if not for_us and (msg.ctl or not msg.lower or not msg.lower[0] & 64):
+                return  # Foreign segment ACKs and DeviceKey traffic are not ours to read.
             if msg.ctl:
                 if not await self.replay.accept(msg.iv_index, msg.src, msg.seq):
                     return
@@ -281,7 +319,7 @@ class MeshController:
                 if ack and cache_key in self.completed and msg.iv_index == self.iv_index:
                     await self._network(segment_ack(ack[0], ack[1]), ctl=True, destination=msg.src)
                 return
-            if ack and msg.iv_index == self.iv_index:
+            if ack and for_us and msg.iv_index == self.iv_index:
                 await self._network(segment_ack(ack[0], ack[1]), ctl=True, destination=msg.src)
                 self.completed[cache_key] = ack
                 if len(self.completed) > 32:
@@ -303,7 +341,9 @@ class MeshController:
                 }
             )
             await self.on_response(response)
-            self.channel.receive(response)
+            # A reply to another controller is the lamp's state, but not an answer to us.
+            if for_us or msg.dst >= GROUP_ADDRESS_START:
+                self.channel.receive(response)
 
     def close(self):
         self.closed = True

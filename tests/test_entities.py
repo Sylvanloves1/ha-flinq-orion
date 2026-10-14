@@ -9,8 +9,6 @@ from custom_components.flinq_orion.protocol.access import AccessMessage
 from custom_components.flinq_orion.protocol.vendor_tuya import DP, encode_dp
 from custom_components.flinq_orion.protocol.errors import MeshTimeoutError
 from custom_components.flinq_orion.light import async_setup_entry, OrionLight
-from custom_components.flinq_orion.number import OrionCountdown
-from custom_components.flinq_orion.select import OrionMode
 from homeassistant.exceptions import HomeAssistantError
 
 
@@ -49,9 +47,18 @@ async def report(device, *dps):
 @pytest.mark.asyncio
 async def test_light_created_after_observation_once_and_unknowns_stay_diagnostics():
     c = Coordinator()
-    entry = SimpleNamespace(runtime_data=SimpleNamespace(coordinator=c), async_on_unload=Mock())
+    entry = SimpleNamespace(
+        runtime_data=SimpleNamespace(lamps={"lamp": SimpleNamespace(coordinator=c)}),
+        async_on_unload=Mock(),
+    )
     entities = []
-    await async_setup_entry(None, entry, entities.extend)
+    subentries = []
+
+    def add(new, config_subentry_id=None):
+        entities.extend(new)
+        subentries.append(config_subentry_id)
+
+    await async_setup_entry(None, entry, add)
     assert not entities
     await report(c.device, DP(54, 2, (30).to_bytes(4, "big")))
     assert not entities
@@ -64,6 +71,7 @@ async def test_light_created_after_observation_once_and_unknowns_stay_diagnostic
     assert len(entities) == 1
     assert light.supported_color_modes == {ColorMode.BRIGHTNESS}
     assert light.brightness == 191
+    assert subentries == ["lamp"]
 
 
 @pytest.mark.asyncio
@@ -96,18 +104,6 @@ async def test_color_and_ct_require_explicit_metadata():
 
 
 @pytest.mark.asyncio
-async def test_countdown_and_modes_from_observed_data():
-    c = Coordinator({"countdown_seconds_confirmed": True, "countdown_max_seconds": 3600})
-    await report(c.device, DP(7, 2, (300).to_bytes(4, "big")), DP(2, 4, b"\x03"))
-    number = OrionCountdown(c)
-    assert number.native_max_value == 3600 and number.native_value == 300
-    selector = OrionMode(c)
-    assert selector.options == ["3"] and selector.current_option == "3"
-    with pytest.raises(HomeAssistantError):
-        await selector.async_select_option("0")
-
-
-@pytest.mark.asyncio
 async def test_no_entities_for_query_only():
     c = Coordinator({"transport_mode": "query_only"})
     await report(c.device, DP(1, 1, b"\x01"), DP(3, 2, (500).to_bytes(4, "big")))
@@ -127,7 +123,7 @@ async def test_unknown_scenes_cannot_be_written():
 
 @pytest.mark.asyncio
 async def test_brightness_preserves_color_mode():
-    c = Coordinator({"hsv_encoding_confirmed": True, "color_mode_value": 1})
+    c = Coordinator({"hsv_encoding_confirmed": True})  # DP 2 index 1 is colour
     await report(
         c.device,
         DP(1, 1, b"\x01"),

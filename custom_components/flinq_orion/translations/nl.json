@@ -1,12 +1,21 @@
 {
   "title": "FlinQ Orion",
   "config": {
+    "flow_title": "{name}",
     "step": {
       "user": {
         "title": "FlinQ Orion",
-        "description": "Voeg de lamp toe zonder reset. Configureer bestaande meshkeys en de experimentele protocolvariant daarna via Opties. Zonder keys blijft de integratie in observatiemodus.",
+        "description": "Voeg een lamp toe zonder reset. Een lamp van een geconfigureerd meshnetwerk wordt aan dat netwerk toegevoegd. Anders ontstaat een nieuw netwerk: stel daarna de bestaande meshkeys in via Opties. Zonder keys blijft de integratie in observatiemodus.",
         "data": {
-          "address": "Bluetoothadres"
+          "address": "Bluetoothadres",
+          "name": "Naam van de lamp"
+        }
+      },
+      "add_lamp": {
+        "title": "Lamp aan netwerk toevoegen",
+        "description": "Lamp {address} hoort bij het meshnetwerk {network}. Aan dit netwerk toevoegen?",
+        "data": {
+          "name": "Naam van de lamp"
         }
       }
     },
@@ -14,42 +23,74 @@
       "invalid_address": "Ongeldig Bluetoothadres"
     },
     "abort": {
-      "already_configured": "Dit apparaat is al geconfigureerd",
-      "not_orion": "Dit is niet de opgegeven Orion-lamp"
+      "already_configured": "Deze lamp is al geconfigureerd",
+      "lamp_added": "De lamp is toegevoegd aan het netwerk {network}",
+      "not_in_network": "Het apparaat hoort niet bij een geconfigureerd meshnetwerk",
+      "not_identified": "Het apparaat is niet herkend als FlinQ Orion-lamp; voeg het handmatig toe"
+    }
+  },
+  "config_subentries": {
+    "lamp": {
+      "entry_type": "Lamp",
+      "initiate_flow": {
+        "user": "Lamp toevoegen"
+      },
+      "step": {
+        "user": {
+          "title": "Lamp toevoegen",
+          "description": "Kies een lamp in de buurt of vul het Bluetoothadres in. 'This network' betekent dat de lamp de Network ID van deze keys uitzendt. Een lamp met een lege accu zendt alleen Node Identity uit en staat als 'network not verified'. Het meshadres wordt bij de eerste verbinding herkend.",
+          "data": {
+            "address": "Bluetoothadres",
+            "name": "Naam van de lamp"
+          }
+        },
+        "reconfigure": {
+          "title": "Lampinstellingen",
+          "description": "Meshadres 0 betekent: herkennen bij de volgende verbinding. De DeviceKey is optioneel en wordt alleen gebruikt voor compositiegegevens en modelbinding.",
+          "data": {
+            "name": "Naam van de lamp",
+            "node_address": "Mesh-unicastadres (decimaal, 0 = herkennen)",
+            "device_key": "DeviceKey (optioneel, 32 hextekens)"
+          }
+        }
+      },
+      "error": {
+        "invalid_address": "Ongeldig Bluetoothadres",
+        "lamp_configured": "Deze lamp is al geconfigureerd",
+        "invalid_key": "Voer een niet-nulle 128-bits hexadecimale sleutel in",
+        "invalid_node": "Het lampadres moet verschillen van het controlleradres"
+      },
+      "abort": {
+        "reconfigure_successful": "De lampinstellingen zijn opgeslagen"
+      }
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Bestaand meshnetwerk",
-        "description": "Kies observe voor passieve diagnostiek, query_only voor lezen, vendor_dp voor experimentele Tuya-DP-bediening of sig voor SIG-lichtmodellen. Gebruik uitsluitend bestaande keys en een eigen vrij unicast-controlleradres (decimale invoer). Bevestig dat dit adres nooit door Smart Life of een andere controller is gebruikt. Keys worden lokaal in HA-configuratieopslag bewaard, niet extra versleuteld; bescherm back-ups. Import: selecteer de oude configuratie en klik Verzenden; de keys en metadata worden lokaal ingevuld. Er wordt niets in de oude integratie gewijzigd. Oud controlleradres: {previous_source}; neem dit niet over. Er blijft een eigen ongebruikt adres nodig.",
+        "title": "Meshnetwerk",
+        "description": "Kies observe voor passieve diagnostiek, query_only voor lezen, vendor_dp voor experimentele Tuya-DP-bediening of sig voor SIG-lichtmodellen. Gebruik uitsluitend bestaande keys en een eigen vrij unicast-controlleradres (decimale invoer). Bevestig dat dit adres nooit door Smart Life of een andere controller is gebruikt. Keys worden lokaal in HA-configuratieopslag bewaard, niet extra versleuteld; bescherm back-ups. Import: selecteer de oude configuratie en klik Verzenden; de keys en metadata worden lokaal ingevuld, en het meshadres en de DeviceKey worden bij die lamp opgeslagen. Er wordt niets in de oude integratie gewijzigd. Oud controlleradres: {previous_source}; neem dit niet over. Er blijft een eigen ongebruikt adres nodig.",
         "data": {
           "net_key": "NetKey (32 hextekens)",
           "app_key": "AppKey (32 hextekens)",
           "iv_index": "Huidige IV Index",
           "availability_timeout": "Beschikbaarheidstime-out (seconden)",
           "transport_mode": "Protocolvariant",
-          "device_key": "DeviceKey (optioneel, 32 hextekens)",
+          "connection_mode": "Verbindingsmodus (on_demand: verbinden per opdracht, aanbevolen voor de accu-lamp; persistent: verbinding open houden)",
           "source_address": "Eigen vrij controlleradres (decimaal)",
-          "node_address": "Primair lampadres (176 = 0x00B0)",
           "new_source_confirmed": "Ik bevestig dat het controlleradres uniek en nooit eerder gebruikt is",
           "import_entry_id": "Bestaande meshgegevens importeren uit Tuya BLE Mesh (optioneel)"
         }
       },
       "profile": {
         "title": "Bevestigde lichtmetadata",
-        "description": "Laat onbekende instellingen uitgeschakeld. CT vereist bewezen eindpunten én een lineaire mapping in Kelvin. HSV moet het 12-hextekenformaat gebruiken. Scenereplay verstuurt alleen eerder ontvangen DP6-waarden. Moduscodes moeten door reports zijn waargenomen en qua betekenis bevestigd zijn; -1 betekent niet automatisch wisselen. Countdown vereist bewezen seconden en maximum.",
+        "description": "Laat onbekende instellingen uitgeschakeld. Zonder bevestigde eindpunten gebruikt kleurtemperatuur 2000–6500 K, het bereik dat de Tuya-integratie van HA voor deze lamp gebruikte. HSV moet het 12-hextekenformaat gebruiken. Scenereplay verstuurt alleen eerder ontvangen DP6-waarden.",
         "data": {
           "hsv_encoding_confirmed": "DP5 gebruikt bevestigd HSV met 12 hextekens",
           "ct_range_confirmed": "Lineaire Kelvin-mapping en CT-eindpunten zijn bevestigd",
           "min_kelvin": "Minimum Kelvin (0 indien onbekend)",
           "max_kelvin": "Maximum Kelvin (0 indien onbekend)",
-          "scene_replay_confirmed": "Replay van ontvangen scenes inschakelen (experimenteel)",
-          "white_mode_value": "Bevestigde witmoduscode (-1 indien onbekend)",
-          "color_mode_value": "Bevestigde kleurmoduscode (-1 indien onbekend)",
-          "scene_mode_value": "Bevestigde scenemoduscode (-1 indien onbekend)",
-          "countdown_seconds_confirmed": "DP7 is bevestigd als countdown in seconden",
-          "countdown_max_seconds": "Bevestigd countdownmaximum in seconden"
+          "scene_replay_confirmed": "Replay van ontvangen scenes inschakelen (experimenteel)"
         }
       }
     },
@@ -57,17 +98,16 @@
       "invalid_key": "Voer een niet-nulle 128-bits hexadecimale sleutel in",
       "both_keys": "Voer beide sleutels in of laat beide leeg",
       "keys_required": "Bestaande NetKey en AppKey zijn vereist",
-      "invalid_source": "Kies een geldig eigen unicastadres buiten de lamp",
-      "source_in_use": "Dit controlleradres is al in gebruik binnen HA",
+      "invalid_source": "Kies een geldig eigen unicastadres dat geen lampadres is",
       "confirm_unique_source": "Bevestig dat dit controlleradres nog nooit gebruikt is",
       "invalid_ct_range": "Vul de bewezen Kelvin-eindpunten in",
-      "invalid_countdown_range": "Vul het bewezen countdownmaximum in",
       "import_missing_keys": "De geselecteerde configuratie bevat geen geldige bestaande SIG Mesh-keys",
       "import_invalid_metadata": "Meshadres of IV Index ontbreekt of is ongeldig in de oude configuratie",
-      "import_wrong_device": "Selecteer de Tuya BLE Mesh-configuratie van dezelfde Bluetoothlamp",
+      "import_wrong_device": "Selecteer de Tuya BLE Mesh-configuratie van een lamp in dit netwerk",
       "import_network_mismatch": "De NetKey hoort niet bij de ontvangen meshidentiteit of beacon",
       "import_iv_mismatch": "De opgeslagen IV Index wijkt af van de geauthenticeerde beacon; herstel is vereist",
-      "import_key_refresh": "De geauthenticeerde beacon meldt een key-refresh; deze import kan niet veilig activeren"
+      "import_key_refresh": "De geauthenticeerde beacon meldt een key-refresh; deze import kan niet veilig activeren",
+      "network_in_use": "Een andere configuratie gebruikt deze NetKey al; voeg de lamp aan dat netwerk toe"
     }
   },
   "entity": {
@@ -76,14 +116,18 @@
         "name": "Signaalsterkte"
       }
     },
-    "number": {
-      "countdown": {
-        "name": "Countdown"
+    "switch": {
+      "switch_pir": {
+        "name": "Bewegingssensor"
       }
     },
-    "select": {
-      "operating_mode": {
-        "name": "Bedrijfsmoduscode"
+    "binary_sensor": {
+      "battery": {
+        "name": "Accustatus",
+        "state": {
+          "off": "Normaal",
+          "on": "Leeg"
+        }
       }
     },
     "button": {

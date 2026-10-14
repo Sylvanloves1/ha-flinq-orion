@@ -1,12 +1,21 @@
 {
   "title": "FlinQ Orion",
   "config": {
+    "flow_title": "{name}",
     "step": {
       "user": {
         "title": "FlinQ Orion",
-        "description": "Add the lamp without resetting it. Configure existing mesh keys and an experimental protocol in Options. Without keys the integration remains in observation mode.",
+        "description": "Add a lamp without resetting it. A lamp of a configured mesh network is added to that network. Otherwise a new network is created: set its existing mesh keys in Options. Without keys the integration stays in observation mode.",
         "data": {
-          "address": "Bluetooth address"
+          "address": "Bluetooth address",
+          "name": "Lamp name"
+        }
+      },
+      "add_lamp": {
+        "title": "Add lamp to network",
+        "description": "Lamp {address} belongs to the mesh network {network}. Add it to this network?",
+        "data": {
+          "name": "Lamp name"
         }
       }
     },
@@ -14,42 +23,74 @@
       "invalid_address": "Invalid Bluetooth address"
     },
     "abort": {
-      "already_configured": "Already configured",
-      "not_orion": "Not the target Orion lamp"
+      "already_configured": "This lamp is already configured",
+      "lamp_added": "The lamp was added to the network {network}",
+      "not_in_network": "The device does not belong to a configured mesh network",
+      "not_identified": "The device cannot be identified as a FlinQ Orion lamp; add it manually"
+    }
+  },
+  "config_subentries": {
+    "lamp": {
+      "entry_type": "Lamp",
+      "initiate_flow": {
+        "user": "Add lamp"
+      },
+      "step": {
+        "user": {
+          "title": "Add lamp",
+          "description": "Select a nearby lamp or enter its Bluetooth address. 'This network' means the lamp advertises the Network ID of these keys. A lamp with a low battery advertises only Node Identity and shows 'network not verified'. The mesh address is detected on the first connection.",
+          "data": {
+            "address": "Bluetooth address",
+            "name": "Lamp name"
+          }
+        },
+        "reconfigure": {
+          "title": "Lamp settings",
+          "description": "Mesh address 0 means: detect it on the next connection. The DeviceKey is optional and is only used for composition data and model binding.",
+          "data": {
+            "name": "Lamp name",
+            "node_address": "Mesh unicast address (decimal, 0 = detect)",
+            "device_key": "DeviceKey (optional, 32 hex characters)"
+          }
+        }
+      },
+      "error": {
+        "invalid_address": "Invalid Bluetooth address",
+        "lamp_configured": "This lamp is already configured",
+        "invalid_key": "Enter a nonzero 128-bit hexadecimal key",
+        "invalid_node": "The lamp address must differ from the controller address"
+      },
+      "abort": {
+        "reconfigure_successful": "The lamp settings were saved"
+      }
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Existing mesh network",
-        "description": "Choose observe for passive diagnostics, query_only for reads, vendor_dp for experimental Tuya DP control or sig for SIG light models. Use existing keys and a dedicated unused unicast controller address (decimal input). Confirm this address has never been used by Smart Life or another controller. Keys are stored locally in HA config entry storage, without additional encryption; protect backups. Import: select the existing entry and submit; keys and metadata are prefilled locally. The original integration is unchanged. Previous controller address: {previous_source}; do not reuse it. A dedicated unused address is still required.",
+        "title": "Mesh network",
+        "description": "Choose observe for passive diagnostics, query_only for reads, vendor_dp for experimental Tuya DP control or sig for SIG light models. Use existing keys and a dedicated unused unicast controller address (decimal input). Confirm this address has never been used by Smart Life or another controller. Keys are stored locally in HA config entry storage, without additional encryption; protect backups. Import: select the existing entry and submit; keys and metadata are prefilled locally, and the mesh address and DeviceKey are stored with that lamp. The original integration is unchanged. Previous controller address: {previous_source}; do not reuse it. A dedicated unused address is still required.",
         "data": {
           "net_key": "NetKey (32 hex characters)",
           "app_key": "AppKey (32 hex characters)",
           "iv_index": "Current IV Index",
           "availability_timeout": "Availability timeout (seconds)",
           "transport_mode": "Protocol mode",
-          "device_key": "DeviceKey (optional, 32 hex characters)",
+          "connection_mode": "Connection mode (on_demand: connect per command, recommended for the battery lamp; persistent: keep a link open)",
           "source_address": "Dedicated unused controller address (decimal)",
-          "node_address": "Primary lamp address (176 = 0x00B0)",
           "new_source_confirmed": "I confirm the controller address is unique and has never previously been used",
           "import_entry_id": "Import existing mesh credentials from Tuya BLE Mesh (optional)"
         }
       },
       "profile": {
         "title": "Confirmed light metadata",
-        "description": "Leave unknown settings disabled. CT requires proven endpoints AND a linear Kelvin mapping. HSV must use the 12-hex-character format. Scene replay sends only previously received DP6 values. Mode codes must have been observed in reports and their meaning confirmed; -1 disables automatic mode selection. Countdown requires confirmed seconds and maximum.",
+        "description": "Leave unknown settings disabled. Without confirmed endpoints, colour temperature uses 2000–6500 K, the range Home Assistant's Tuya integration used for this lamp. HSV must use the 12-hex-character format. Scene replay sends only previously received DP6 values.",
         "data": {
           "hsv_encoding_confirmed": "DP5 is confirmed as 12-hex HSV",
           "ct_range_confirmed": "Linear Kelvin mapping and CT endpoints are confirmed",
           "min_kelvin": "Minimum Kelvin (0 if unknown)",
           "max_kelvin": "Maximum Kelvin (0 if unknown)",
-          "scene_replay_confirmed": "Enable captured scene replay (experimental)",
-          "white_mode_value": "Confirmed white mode code (-1 if unknown)",
-          "color_mode_value": "Confirmed color mode code (-1 if unknown)",
-          "scene_mode_value": "Confirmed scene mode code (-1 if unknown)",
-          "countdown_seconds_confirmed": "DP7 is confirmed as countdown in seconds",
-          "countdown_max_seconds": "Confirmed countdown maximum in seconds"
+          "scene_replay_confirmed": "Enable captured scene replay (experimental)"
         }
       }
     },
@@ -57,17 +98,16 @@
       "invalid_key": "Enter a nonzero 128-bit hexadecimal key",
       "both_keys": "Provide both keys or neither",
       "keys_required": "Existing NetKey and AppKey required",
-      "invalid_source": "Choose a valid dedicated unicast address distinct from the lamp",
-      "source_in_use": "This controller address is already in use in HA",
+      "invalid_source": "Choose a valid dedicated unicast address distinct from the lamps",
       "confirm_unique_source": "Confirm the controller address has never been used",
       "invalid_ct_range": "Enter the proven Kelvin endpoints",
-      "invalid_countdown_range": "Enter the proven countdown maximum",
       "import_missing_keys": "Selected entry has no valid existing SIG Mesh keys",
       "import_invalid_metadata": "Mesh address or IV Index is missing or invalid in the existing entry",
-      "import_wrong_device": "Select the Tuya BLE Mesh entry for the same Bluetooth lamp",
+      "import_wrong_device": "Select the Tuya BLE Mesh entry of a lamp in this network",
       "import_network_mismatch": "The NetKey does not match the received mesh identity or beacon",
       "import_iv_mismatch": "Stored IV Index differs from the authenticated beacon; recovery is required",
-      "import_key_refresh": "Authenticated beacon indicates key refresh; this import cannot safely activate"
+      "import_key_refresh": "Authenticated beacon indicates key refresh; this import cannot safely activate",
+      "network_in_use": "Another entry already uses this NetKey; add the lamp to that network instead"
     }
   },
   "entity": {
@@ -76,14 +116,18 @@
         "name": "Signal strength"
       }
     },
-    "number": {
-      "countdown": {
-        "name": "Countdown"
+    "switch": {
+      "switch_pir": {
+        "name": "Motion sensor"
       }
     },
-    "select": {
-      "operating_mode": {
-        "name": "Operating mode code"
+    "binary_sensor": {
+      "battery": {
+        "name": "Battery status",
+        "state": {
+          "off": "Normal",
+          "on": "Empty"
+        }
       }
     },
     "button": {
