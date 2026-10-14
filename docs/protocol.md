@@ -652,3 +652,45 @@ stable for at least 8 minutes, and every read was answered. Response time varies
 strongly. Not established: where the delay arises (lamp application, radio link, or
 ESP32 to Home Assistant transfer). A proxy log with `esp32_ble` at VERBOSE shows the
 ESP32 notification times and separates these.
+
+## Data point map from the Tuya cloud schema (PID 1ajecbtl)
+
+Source: the Home Assistant Tuya integration diagnostics of 2026-10-06 and 2026-10-11,
+field `local_strategy` (DP id to code) and `status_range`. This is the product
+definition. The SIG mesh wire encoding of each DP is not yet confirmed on the lamp.
+
+| DP | Code | Type | Range |
+|---|---|---|---|
+| 1 | switch_led | Boolean | |
+| 2 | work_mode | Enum | white, colour, scene, music |
+| 3 | bright_value | Integer | 10–1000 |
+| 4 | temp_value | Integer | 0–1000 |
+| 5 | colour_data | Json | `dj_v2_color_alg` |
+| 6 | scene_data | Json | `dj_v2_scene_alg` |
+| 7 | countdown | Integer | 0–86400 (unit not stated, expected seconds) |
+| 51 | device_mode | Enum | auto, manual |
+| 52 | pir_state | Enum | pir, none (status only, meaning not confirmed) |
+| 53 | cds | Enum | 2000lux, 300lux, 50lux, 10lux, 5lux |
+| 54 | pir_sensitivity | Enum | low, middle, high |
+| 55 | pir_delay | Integer | 5–3600 s |
+| 56 | switch_pir | Boolean | |
+| 58 | standby_time | Integer | 1–480 min |
+| 59 | standby_bright | Integer | 0–1000 |
+
+There is no battery, charging or lux measurement data point. The cloud status on
+2026-10-06 was: switch_led false, work_mode white, bright_value 10, temp_value 0,
+countdown 0, device_mode auto, pir_state pir, cds 2000lux, pir_sensitivity low,
+pir_delay 5, switch_pir false, standby_time 1, standby_bright 0.
+
+## Vendor DP reports go to another destination (captures 0 and 1)
+
+After the first vendor DP query (0xCC) of a connection, the lamp sent 7 (capture 0) and
+10 (capture 1) network messages that our proxy filter did not forward, and 1.7 s later
+answered us with 0xCD `01` and no DP data. After a second query on the same connection it
+sent no hidden messages and answered in 0.16 s. The filter forwards only destination
+0x0002. Capture 0 also shows one lamp message to group 0xD000 at connection start.
+
+Hypothesis (two of two cases): the lamp publishes its DP report, probably segmented, to
+another address (for example group 0xD000 or the old controller address), and only
+acknowledges the query to us. Test: a session with the proxy filter set to accept all
+destinations (connection scoped, no change to the lamp configuration).
