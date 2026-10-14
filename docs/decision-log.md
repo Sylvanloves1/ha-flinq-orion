@@ -206,3 +206,24 @@ battery the lamp is reachable for a few seconds every ~180 s.
 
 The 30 minute refresh costs one link per refresh (48 per day) and fails while the battery
 is low; this cost was accepted for a more current state.
+
+## D-011 How to add the lamp functions (2026-10-14)
+
+**Context.** The user asked for every controllable function and every sensor, including
+the battery. The Tuya cloud schema lists 15 data points (DP 1–7, 51–56, 58, 59) and no
+battery data point. Only power is proven physically. Vendor DP reports were never received;
+they probably go to another destination that the proxy filter drops.
+
+**Options.**
+- Phased with evidence: read first, then entities, writes per DP after a write and
+  readback test. Gives: no unintended changes. Costs: two or three test rounds.
+- All from the schema, read-only until a write test. Gives: everything visible fast.
+  Costs: values can be wrong if the encoding differs.
+- All from the schema, including writes. Gives: fastest. Costs: a wrongly encoded write
+  can change PIR, standby or light settings without a way to read them back.
+
+**Recommendation.** Phased with evidence.
+
+**Decision.** All from the schema, including writes, chosen by Sylvan Loves. Also: a derived
+"battery probably low" sensor, and 0.3.0b1 is released together with this work. Status:
+settled.
