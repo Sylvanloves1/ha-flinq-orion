@@ -739,3 +739,25 @@ tuya.github.io/tuya-home-android-sdk-api-reference (SigMeshBean);
 developer.tuya.com: meshsig (Ka6km4aeuygxr), mesh provisioning (Kd5wkuunhsjtq), mesh
 capabilities (Kd5wlb84e6c0o), TLSR825x mesh light (Kce4nmogrxe0c), BLE Mesh protocol
 specification (K9ik5884f3in9).
+
+## First run of 0.4.0b1 (device diagnostics, 2026-10-14, 19:07–19:16 UTC)
+
+One observation, one lamp.
+
+- Migration: one network entry, one lamp subentry, one device with 5 entities. Mesh address
+  176, controller address 2; the sequence continued (next 3883, no store failure).
+- Control: 12 Generic OnOff Set commands (19:10:09–19:16:09) were each confirmed by an OnOff
+  Status from 176 within 0.2–1.3 s.
+- Start-up: the first connection attempt (19:07:39) failed with "No backend with an available
+  connection slot ... 0 scanner(s) registered": the ESPHome proxy was not registered yet after
+  the restart. The next attempt (19:08:40) opened a link after 19 s.
+- Dead link: after the last confirmed command (19:10:42) a status query at about 19:11:47
+  timed out on all five reads while the link was still open. The link closed on idle at
+  19:12:57. A connection attempt at 19:13:17 left no result in the diagnostics, because a
+  failed connection for a command is not recorded. The attempt at 19:14:56 opened a link in 3 s.
+- After the link setup at 19:14:59 the lamp sent six Tuya vendor messages, opcode 0xCA (write
+  unacknowledged in our opcode table), payload `8b01`, to the all-nodes address 0xFFFF, with
+  many retransmissions. Meaning unknown. In both status refreshes the first read (OnOff Get,
+  2 s timeout) timed out and the later reads answered. Hypothesis, not tested: the lamp is busy
+  with these broadcasts directly after the link setup.
+- The vendor status query still returns an empty DP report (`01`).
