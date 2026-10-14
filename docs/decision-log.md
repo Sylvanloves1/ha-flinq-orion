@@ -348,3 +348,39 @@ entities moved first, both kept their entity IDs.
 **Recommendation.** As chosen above.
 
 **Decision.** Made during implementation; status: open until reviewed by Sylvan Loves.
+
+## D-017 How other users get the mesh keys (2026-10-14)
+
+**Context.** Second part of D-014: other users must be able to pair their FlinQ Orion. Desk
+research (docs/protocol.md, "How users get the mesh keys") showed that `tuya_ble_mesh` makes
+its own keys and provisions the lamp after a factory reset, and that no open-source route reads
+SIG Mesh keys from the Tuya cloud.
+
+**Considerations.** Provisioning needs a factory reset, and the lamp then leaves Smart Life.
+Configuration must finish within 30 s after provisioning (Tuya documentation). Reports on 2 to 4
+other Tuya SIG Mesh devices show local control after No OOB provisioning; none is an Orion.
+`tuya_ble_mesh` v0.38.1 has a bug in its AppKey Add call.
+
+**Options.**
+- Provisioning in this integration (0.5). Gives: pairing without other software. Costs: a reset,
+  the lamp leaves Smart Life, a test needs a separate lamp.
+- Keep import and manual entry. Costs: users depend on `tuya_ble_mesh` and its bug.
+- Decide later. Costs: other users cannot pair for now.
+
+**Recommendation.** Provisioning in this integration, tested on a separate lamp and not on the
+working one.
+
+**Decision.** Provisioning in this integration as 0.5, chosen by Sylvan Loves. Status: settled
+for the direction; the design follows in a new plan.
+
+## D-018 Motion sensor switch stays (2026-10-14)
+
+**Context.** D-013 kept the motion sensor switch (DP 56) because "PIR may go" was read as the
+PIR state sensor only, to be confirmed by the user.
+
+**Options.** Keep the switch: motion detection can be turned on and off from Home Assistant,
+one entity. Remove it: a smaller device page; the DP schema stays in the code.
+
+**Recommendation.** Keep.
+
+**Decision.** Keep, confirmed by Sylvan Loves. Status: settled; closes the open point of D-013.
