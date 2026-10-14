@@ -155,3 +155,33 @@ confirm or reject the boot loop without changing the lamp.
 
 Settles D-007. **Decision:** observe one power cycle physically, with a passive Mac monitor,
 before any reset. Chosen by Sylvan Loves. Status: settled.
+
+## D-009 Connection strategy for a battery lamp (2026-10-14)
+
+**Context.** The Orion runs on a 2200 mAh Li-ion battery charged by solar or USB-C. With a
+low battery it enters a cycle of about 180 s in which no link works. After charging, one
+persistent link was stable for more than 8 minutes, with 0.16–4.4 s response time.
+
+**Considerations.**
+- Response with a persistent link: 0.2–1.3 s, sometimes up to 4.4 s. A new link took
+  0.8–3 s plus 0.3–0.9 s setup when the lamp advertised normally.
+- The extra energy of a persistent link is not measured. It is probably small compared
+  with the lamp's own mesh listening (relay, proxy and friend supported), but that is an
+  estimate.
+- The lamp has no battery data point. A low battery is only visible indirectly.
+- The proxy filter accepts only messages to our address, so the lamp's own status changes
+  (for example by PIR) do not reach Home Assistant in either mode.
+- A persistent link occupies one of three ESP32 connection slots.
+
+**Options.**
+- Persistent with low-battery detection. Gives: fastest response. Costs: one slot; unknown
+  extra energy.
+- Connect per command, disconnect after idle time. Gives: no idle link, free slot.
+  Costs: 1–4 s extra on the first command; state can be stale; up to about 3 minutes or
+  failure when the battery is low.
+- Persistent, unchanged. Gives: no work. Costs: retries during low battery, no warning.
+
+**Recommendation.** Persistent with low-battery detection.
+
+**Decision.** Connect per command, chosen by Sylvan Loves. Status: settled. Details of
+idle time, refresh and failure behaviour: D-010.
