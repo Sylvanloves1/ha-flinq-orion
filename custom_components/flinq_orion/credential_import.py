@@ -6,7 +6,7 @@ sequence numbers, cloud credentials or legacy mesh passwords are imported.
 
 import re
 from hmac import compare_digest
-from .protocol.crypto import k3, k1, s1, aes_block
+from .protocol.advertisements import identity_material, node_identity_hash
 from .protocol.beacon import decode_secure_beacon
 from .protocol.errors import MeshError
 from .const import PROXY_SERVICE
@@ -90,17 +90,15 @@ def verify_network_evidence(credentials, service_data, records=()):
     An absence of verifiable evidence is reported, never converted into success.
     """
     key = bytes.fromhex(credentials["net_key"])
+    network_id, identity_key = identity_material(key)
     value = service_data.get(PROXY_SERVICE)
     verified = False
     if value and len(value) == 9 and value[0] == 0:
-        if not compare_digest(value[1:], k3(key)):
+        if not compare_digest(value[1:], network_id):
             raise CredentialImportError("import_network_mismatch")
         verified = True
     elif value and len(value) == 17 and value[0] == 1:
-        identity_key = k1(key, s1(b"nkik"), b"id128\x01")
-        hashed = aes_block(
-            identity_key, bytes(6) + value[9:] + credentials["node_address"].to_bytes(2, "big")
-        )[8:]
+        hashed = node_identity_hash(identity_key, value[9:], credentials["node_address"])
         if not compare_digest(hashed, value[1:9]):
             raise CredentialImportError("import_network_mismatch")
         verified = True

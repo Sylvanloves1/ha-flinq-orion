@@ -35,6 +35,7 @@ class MeshSession:
         self.next_attempt = 0.0
         self.failures = 0
         self.setup_stage = "idle"
+        self.link_opened: float | None = None
         self.key_scope = hashlib.sha256(bytes.fromhex(self.entry.options["net_key"])).hexdigest()[
             :24
         ]
@@ -122,7 +123,14 @@ class MeshSession:
     def _disconnected(self, client):
         if client is not self.client:
             return
-        self.coordinator.record({"kind": "disconnected", "generation": self.connection_generation})
+        self.coordinator.record(
+            {
+                "kind": "disconnected",
+                "generation": self.connection_generation,
+                "stage": self.setup_stage,
+                "link_lifetime_s": self.link_lifetime(),
+            }
+        )
         self.connection_generation += 1
         if self.controller:
             self.controller.close()
@@ -130,6 +138,11 @@ class MeshSession:
         self.coordinator.device.controller = None
         self.coordinator.async_set_updated_data(dict(self.coordinator.data))
         self.next_attempt = max(self.next_attempt, time.monotonic() + 15)
+
+    def link_lifetime(self):
+        if self.link_opened is None:
+            return None
+        return round(time.monotonic() - self.link_opened, 2)
 
     async def ensure_connection(self):
         if self.crypto_blocked:
@@ -153,20 +166,26 @@ class MeshSession:
                 self.client = None
                 await old.disconnect()
             self.setup_stage = "connect_and_discover_services"
+            self.link_opened = None
+            # 0.2.1 policy: reuse services HA already holds so the ESPHome proxy can take its
+            # cached path. No logged uncached proxy connection to this lamp lasted over 21 s.
+            self.coordinator.record({"kind": "connect_attempt", "services_cache": "allowed"})
             client = await establish_connection(
                 BleakClientWithServiceCache,
                 device,
                 "FlinQ Orion",
                 disconnected_callback=self._disconnected,
-                use_services_cache=False,
             )
             if self.closed:
                 await client.disconnect()
                 raise DeviceUnavailableError("Integration unloaded while connecting")
             self.client = client
+            self.link_opened = time.monotonic()
             self.connection_generation += 1
             generation = self.connection_generation
+            self.coordinator.record({"kind": "link_open", "generation": generation})
             sar = ProxySAR()
+            stale_table = False
 
             def notification(handle, data):
                 if generation != self.connection_generation:
@@ -203,6 +222,7 @@ class MeshSession:
                     or not client.services.get_characteristic(PROXY_IN)
                     or not client.services.get_characteristic(PROXY_OUT)
                 ):
+                    stale_table = True
                     raise MeshError("Lamp exposes no SIG Mesh Proxy service 0x1828")
                 key = bytes.fromhex(self.entry.options["app_key"])
                 devkey = (
@@ -235,11 +255,20 @@ class MeshSession:
                 self.coordinator.async_set_updated_data(dict(self.coordinator.data))
                 self.failures = 0
                 self.setup_stage = "ready"
+                self.coordinator.record(
+                    {
+                        "kind": "connection_ready",
+                        "generation": generation,
+                        "setup_s": self.link_lifetime(),
+                    }
+                )
             except BaseException as err:
-                self.coordinator.record(self.connection_error(err))
-                if isinstance(err, Exception) and (
-                    clear_cache := getattr(client, "clear_cache", None)
-                ):
+                self.coordinator.record(
+                    {**self.connection_error(err), "link_lifetime_s": self.link_lifetime()}
+                )
+                # Clear only on a table without the proxy service. Clearing after a link
+                # loss forces the next connection onto the uncached proxy path.
+                if stale_table and (clear_cache := getattr(client, "clear_cache", None)):
                     try:
                         cleared = await clear_cache()
                         self.coordinator.record(
@@ -310,6 +339,45 @@ class MeshSession:
                 await client.write_gatt_char(
                     PROXY_IN, bytes(((sar << 6) | kind,)) + chunk, response=False
                 )
+
+    async def probe_link(self, seconds=120, interval=10):
+        """Read-only status reads at a fixed interval to measure how long links carry traffic.
+
+        Each read may reconnect through the normal path. Failures are measurements and do
+        not stop the probe; cancellation does.
+        """
+        summary: dict = {"probes": 0, "responses": 0, "failures": {}, "longest_link_s": 0.0}
+        generations = set()
+        deadline = time.monotonic() + seconds
+        while not self.closed:
+            started = time.monotonic()
+            try:
+                await self.coordinator.device.probe()
+                result = "response"
+                summary["responses"] += 1
+            except Exception as err:
+                result = type(err).__name__
+                summary["failures"][result] = summary["failures"].get(result, 0) + 1
+            summary["probes"] += 1
+            age = self.link_lifetime() if self.connected else None
+            if age is not None:
+                generations.add(self.connection_generation)
+                summary["longest_link_s"] = max(summary["longest_link_s"], age)
+            self.coordinator.record(
+                {
+                    "kind": "link_probe",
+                    "n": summary["probes"],
+                    "result": result,
+                    "latency_ms": round((time.monotonic() - started) * 1000),
+                    "generation": self.connection_generation if age is not None else None,
+                    "link_age_s": age,
+                }
+            )
+            if time.monotonic() + interval > deadline:
+                break
+            await asyncio.sleep(max(0.0, interval - (time.monotonic() - started)))
+        summary["links_used"] = len(generations)
+        return summary
 
     async def capture(self, seconds=20):
         await self.ensure_connection()

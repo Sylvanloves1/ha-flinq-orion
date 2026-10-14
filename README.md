@@ -1,6 +1,8 @@
 # FlinQ Orion FQC8274 — experimental local integration
 
-Version **0.2.7** is a new independent Home Assistant custom integration, not a fork or wrapper. It includes an active local Tuya SIG Mesh client through Home Assistant's Bluetooth stack and ESPHome Bluetooth Proxies. **Local SIG power control has been confirmed on the Orion; other features still require physical verification.** Selecting a protocol enables an experiment, not a claim that all FQC8274 features work.
+Version **0.2.9b1** is a new independent Home Assistant custom integration, not a fork or wrapper. It includes an active local Tuya SIG Mesh client through Home Assistant's Bluetooth stack and ESPHome Bluetooth Proxies. **Local SIG power control has been confirmed on the Orion; other features still require physical verification.** Selecting a protocol enables an experiment, not a claim that all FQC8274 features work.
+
+0.2.9b1 is a test prerelease, not a validated fix. It restores the GATT service cache policy of 0.2.1, checks passively whether the lamp still advertises the configured network and unicast address, keeps a separate connection history in diagnostics and adds the read-only `flinq_orion.probe_link` action. Use it only with [docs/link-test-procedure.md](docs/link-test-procedure.md). The 0.2.8b1 connection-parameter experiment is not included.
 
 Implemented:
 

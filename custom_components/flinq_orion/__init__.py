@@ -12,7 +12,14 @@ from .bluetooth import Inspector
 from .session import MeshSession
 
 PLATFORMS = ["sensor", "light", "number", "select", "button"]
-SERVICES = ("capture", "query_status", "query_dp", "dump_capabilities", "bind_vendor_model")
+SERVICES = (
+    "capture",
+    "query_status",
+    "query_dp",
+    "dump_capabilities",
+    "bind_vendor_model",
+    "probe_link",
+)
 
 
 @dataclass
@@ -85,6 +92,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         )
                     async with device.operation_lock:
                         await device.bind_vendor(call.data["app_key_index"])
+                elif call.service == "probe_link":
+                    if data.session is None:
+                        raise HomeAssistantError("Link probe requires configured mesh keys")
+                    return await data.session.probe_link(
+                        call.data["seconds"], call.data["interval"]
+                    )
             except HomeAssistantError:
                 raise
             except Exception as err:
@@ -114,6 +127,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 response = SupportsResponse.ONLY
             elif service == "query_status":
                 fields[vol.Optional("include_optional", default=False)] = bool
+                response = SupportsResponse.OPTIONAL
+            elif service == "probe_link":
+                fields[vol.Optional("seconds", default=120)] = vol.All(
+                    vol.Coerce(int), vol.Range(min=30, max=600)
+                )
+                fields[vol.Optional("interval", default=10)] = vol.All(
+                    vol.Coerce(int), vol.Range(min=5, max=60)
+                )
                 response = SupportsResponse.OPTIONAL
             hass.services.async_register(
                 DOMAIN,

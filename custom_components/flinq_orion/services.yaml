@@ -74,3 +74,26 @@ bind_vendor_model:
       required: true
       selector:
         boolean:
+probe_link:
+  name: Probe link stability
+  description: Send one read-only status request per interval and record how long each Bluetooth link carries responses. Reconnects through the normal path; no state is changed.
+  fields:
+    entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: flinq_orion
+    seconds:
+      default: 120
+      selector:
+        number:
+          min: 30
+          max: 600
+          unit_of_measurement: s
+    interval:
+      default: 10
+      selector:
+        number:
+          min: 5
+          max: 60
+          unit_of_measurement: s

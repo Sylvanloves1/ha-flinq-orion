@@ -17,10 +17,33 @@ from .protocol.transport import AccessReceiver, ReplayWindow
 from .protocol.access import decode_access
 from .protocol.errors import FlinqOrionError
 from .protocol.controller import Response
-from .protocol.advertisements import classify
+from .protocol.advertisements import (
+    PROVISIONING,
+    PROXY,
+    classify,
+    identity_material,
+    network_evidence,
+    raw_service_data,
+)
 from .device import OrionDevice
 
 _LOGGER = logging.getLogger(__name__)
+
+# Kept apart from packet records, which push connection events out of a 100-entry buffer.
+LIFECYCLE_KINDS = frozenset(
+    {
+        "connect_attempt",
+        "link_open",
+        "connection_setup",
+        "connection_ready",
+        "connection_error",
+        "disconnected",
+        "gatt_cache_clear",
+        "lamp_state_warning",
+        "link_probe",
+        "action_error",
+    }
+)
 
 
 class OrionCoordinator(DataUpdateCoordinator):
@@ -30,6 +53,7 @@ class OrionCoordinator(DataUpdateCoordinator):
         self.address = entry.data["address"]
         self.capabilities = DeviceCapabilities()
         self.records: deque[dict] = deque(maxlen=100)
+        self.connection_history: deque[dict] = deque(maxlen=60)
         self.data = {
             "rssi": None,
             "last_seen": None,
@@ -41,12 +65,18 @@ class OrionCoordinator(DataUpdateCoordinator):
             "responsive": False,
             "command_failures": 0,
             "last_response": None,
+            "network_evidence": None,
+            "network_evidence_counts": {},
         }
         self.last_monotonic = 0.0
         self.last_response_monotonic = 0.0
         self.session = None
         self.device = OrionDevice(self)
         self.codec = self.receiver = None
+        self.identity: tuple[bytes, bytes] | None = None
+        self.node_address = entry.options.get("node_address", 0x00B0)
+        if entry.options.get("net_key"):
+            self.identity = identity_material(bytes.fromhex(entry.options["net_key"]))
         if entry.options.get("net_key") and entry.options.get("app_key"):
             self.codec = NetworkCodec(bytes.fromhex(entry.options["net_key"]))
             self.receiver = AccessReceiver(
@@ -99,10 +129,50 @@ class OrionCoordinator(DataUpdateCoordinator):
             "rssi": info.rssi,
             "source": info.source,
         }
+        raw = getattr(info, "raw", None)
+        latest = raw_service_data(raw) if raw else None
+        if latest is not None:
+            record["latest_packet"] = classify(latest)
         self.record(record)
+        if self.identity:
+            self.check_network(info.service_data.get(PROXY), latest)
         self.async_set_updated_data(dict(self.data))
         if self.session:
             self.session.schedule_connect()
+
+    def check_network(self, proxy_data, latest):
+        """Passive proof that the lamp still advertises this network and unicast address.
+
+        Uses the newest proxy identity HA holds. Provisioning service data is only
+        taken from the raw packet, because HA keeps merged service data from older packets.
+        """
+        if self.identity is None:
+            return
+        network_id, identity_key = self.identity
+        result = network_evidence(proxy_data, network_id, identity_key, self.node_address)
+        unprovisioned = None if latest is None else PROVISIONING in latest
+        counts = self.data["network_evidence_counts"]
+        counts[result] = counts.get(result, 0) + 1
+        if unprovisioned:
+            counts["unprovisioned_packet"] = counts.get("unprovisioned_packet", 0) + 1
+        previous = self.data["network_evidence"] or {}
+        self.data["network_evidence"] = {
+            "result": result,
+            "unprovisioned_packet": unprovisioned,
+            "time": dt_util.utcnow().isoformat(),
+        }
+        changed = (previous.get("result"), previous.get("unprovisioned_packet")) != (
+            result,
+            unprovisioned,
+        )
+        if changed and (result == "mismatch" or unprovisioned):
+            self.record(
+                {
+                    "kind": "lamp_state_warning",
+                    "network_evidence": result,
+                    "unprovisioned_packet": bool(unprovisioned),
+                }
+            )
 
     @callback
     def expire(self, now):
@@ -143,6 +213,8 @@ class OrionCoordinator(DataUpdateCoordinator):
     def record(self, record):
         record["time"] = dt_util.utcnow().isoformat()
         self.records.append(record)
+        if record.get("kind") in LIFECYCLE_KINDS:
+            self.connection_history.append(record)
         _LOGGER.debug("ORION RX %s", record)
 
     def network_received(self, pdu):

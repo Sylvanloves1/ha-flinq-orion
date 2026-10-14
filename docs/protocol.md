@@ -213,3 +213,202 @@ and [retry connector source](https://github.com/Bluetooth-Devices/bleak-retry-co
 Install 0.2.7, restart HA and power-cycle the lamp once. Wait one minute and try
 on/off. Capture FlinQ diagnostics and simultaneous ESPHome logs to establish
 whether service discovery, notification subscription or proxy filter setup fails.
+
+## Correlated capture 12 / proxy log 3 (2026-10-14)
+
+At 12:52:19 local time the proxy opens an uncached connection, discovers services
+and reports MTU 250 and a medium connection-parameter update. HA enters notification
+subscription at 10:52:19 UTC. Mesh Proxy Data Out 0x2ADE has handle 28; its CCCD
+0x2902 has handle 30. At 12:52:40 the proxy reports an error writing descriptor
+0x1E (30), status 133, immediately followed by disconnect reason 0x08 (connection
+timeout). No mesh access or proxy filter message was transmitted. Fresh discovery
+did not resolve the failure; the CCCD handle is consistent with the discovered table.
+
+This establishes failure during GATT notification subscription, not a mesh key,
+sequence or DP response failure. It does not distinguish radio coexistence,
+connection-parameter incompatibility, proxy/stack behavior or peripheral behavior.
+Earlier vendor/range-query correlations are insufficient evidence of causation.
+Do not promote 0.2.7 as a physically validated stable release. Inspect the actual
+ESPHome YAML before changing radio or connection parameters. No additional code
+release was made from this capture.
+
+Reference: [ESP-IDF HCI error definitions](https://github.com/espressif/esp-idf/blob/master/components/bt/host/bluedroid/stack/include/stack/hcidefs.h)
+define HCI_ERR_CONNECTION_TOUT as 0x08.
+
+## Correlated capture 14 / proxy log 5
+
+After the WiFi power-save experiment and manual status action, at 13:18:19 local
+time the uncached proxy connection opens (MTU 250, medium connection parameters).
+Notification subscription and authenticated proxy filtering succeed. Four standard
+SIG GETs all receive authenticated replies by 13:18:20.800. At 13:18:22.951 the
+proxy reports DISCONNECT_EVT reason 0x08 without a preceding local Disconnecting
+request. No optional range/composition/vendor query is transmitted in this session.
+
+This establishes a link timeout even after successful startup and disproves
+optional queries as a necessary cause. It does not identify which endpoint,
+connection-parameter negotiation or radio conditions cause the timeout. Do not
+claim that WiFi power-save adjustment, cache refresh or query removal resolved it.
+Next physical isolation: keep software/settings fixed, temporarily place the
+proxy 1–2 metres from the lamp with unobstructed placement, and reproduce one
+manual status connection with concurrent logs. Strong advertisement RSSI alone
+does not demonstrate sustained bidirectional link reliability.
+
+## Connection parameter source audit (ESPHome 2026.9.1)
+
+Source audit confirms uncached Bluedroid setup requests FAST min/max 6 units
+(7.5 ms), latency 0, supervision timeout 1000 units (10 s). Discovery completion
+calls an update to MEDIUM min 7/max 9 (8.75–11.25 ms), latency 0, timeout 800 (8 s).
+These are requested parameters, not measured negotiated values. A disconnect
+roughly 3.1 s after open cannot by itself be attributed to the requested 8 s timer.
+
+`esp32_ble/ble.cpp` handles `ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT`: failed updates
+are WARN; successful updates are VERBOSE under tag `esp32_ble` with actual interval,
+latency and timeout. Previous DEBUG captures omit successful negotiated values.
+Use existing firmware logging instrumentation before introducing an interval override.
+The HA client exposes `set_connection_params`; the ESPHome backend requests the
+update through the API, and unsupported firmware may only warn and return. A
+completed API call alone therefore must not be treated as proof of negotiation.
+No automatic parameter override or published integration change was made.
+
+Sources (version pinned where applicable):
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/ble_device_base/ble_client_state.h
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/bluetooth_connection/bluetooth_connection_bluedroid.cpp
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/esp32_ble/ble.cpp
+- https://github.com/Bluetooth-Devices/bleak-esphome/blob/main/src/bleak_esphome/backend/client.py
+
+Next capture: compile logger at VERBOSE, initial runtime DEBUG, override only
+esp32_ble to VERBOSE. Keep radio, mesh and integration settings fixed. Power-cycle
+the lamp once with live logs, invoke normal status button once advertisements
+return, capture two minutes and inspect `Conn params updated`/`Conn param update
+failed` together with the connection-open and disconnect timestamps.
+
+## Negotiated values from proxy log 7
+
+At 13:47:51.819 the successful GAP update reports interval 9 (11.25 ms),
+latency 0, supervision timeout 800 (8 s). At 13:47:52.737 another successful
+update reports interval 32 (40 ms), latency 0, timeout 200 (2 s). Disconnect
+reason 0x08 follows at 13:47:55.206, 2.469 seconds after the second update.
+The shorter negotiated timer is now observed, not inferred from defaults. The
+log does not identify which endpoint initiated the second update; attributing
+it to the lamp is a hypothesis. The timing supports a parameter/link interaction
+but does not prove that increasing supervision timeout restores reliable traffic.
+
+A next isolated experiment may preserve the observed 40 ms interval and latency
+0 while requesting timeout 800 (8 s) through the supported HA BLE client API.
+Verify the accepted GAP values, not merely API completion, and sustained on/off
+responses over at least 60 seconds. Longer availability alone is insufficient:
+the link may simply time out later. No automatic override is enabled in 0.2.7.
+
+## Beta experiment result: capture 15 / proxy log 8
+
+Two experiment calls at 14:14:30 and 14:17:15 local return from the HA API,
+but each corresponding proxy GAP event reports `Conn param update failed,
+status=16`. No accepted 40 ms / 8 s update is reported. Notification CCCD writing
+then fails with status 133 and disconnect reason 0x08. No authenticated mesh
+reports are received in these attempts. The beta is not a successful fix and
+must not be promoted to main. Status 16 is retained numerically; do not claim
+a rejection by the lamp or assign an HCI meaning without tracing the API enum.
+
+A control with a separate BLE client (integration disabled to avoid competition)
+can test sustained GATT connection and Proxy Data Out notification subscription
+without keys, provisioning, descriptor overrides or mesh writes. This separates
+proxy-path compatibility from peripheral-side behavior. Device keys need not be
+shared with the control client. No further parameter guesses are justified by
+this unsuccessful experiment.
+
+## Source audit and capture correlation (0.2.9b1)
+
+All times are UTC. Proxy logs show local time (UTC+2) and are converted here.
+
+### Facts from source code
+
+- ESPHome 2026.9.1, `bluetooth_connection_bluedroid.cpp`: an uncached connection uses
+  FAST parameters (7.5 ms, 10 s), runs service discovery and requests MEDIUM
+  (8.75–11.25 ms, 8 s) after discovery. A cached connection opens with MEDIUM, runs no
+  discovery and sends no parameter update (`bluetooth_connection_hub.cpp` asks for MEDIUM
+  again; Bluedroid logs "connection parameter already set").
+- The MTU request is sent on `ESP_GATTC_CONNECT_EVT` for both connection types. A cached
+  connection reports `mtu=23` by design (`DEFAULT_ATT_MTU`, OPEN_EVT handler). The
+  "MTU 23 versus 250" difference in earlier notes is a reporting difference, not a
+  negotiated difference.
+- bleak-retry-connector 4.7.1: `use_services_cache=False` sends
+  `dangerous_use_bleak_cache=False`. bleak-esphome 4.0.0 then always requests
+  `V3_WITHOUT_CACHE`. With the default (`True`), bleak-esphome requests `V3_WITH_CACHE`
+  when it holds services and an MTU for the address. That cache is in memory per proxy API
+  session. A Home Assistant restart or a proxy reconnect clears it. An integration cannot
+  fill it (`set_cached_services` is a no-op).
+- 0.2.7 called `clear_cache()` after every failed setup. That forced every next attempt
+  onto the uncached path.
+- `Conn param update failed, status=16`: `esp_bt_status_t` value 16 is
+  `ESP_BT_STATUS_TIMEOUT`, mapped from `HCI_ERR_HOST_TIMEOUT` (`btc_hci_to_esp_status`).
+  Bluedroid sets it when its connection-update timer expires (`l2c_process_timeout`,
+  `BTU_TTYPE_L2CAP_UPDA_CONN_PARAMS`). `CalConnectParamTimeout` gives 1–2 s here. The
+  controller did not report completion. It is not a rejection by the lamp.
+- Telink SIG Mesh SDK builds from 2020–2022 call
+  `bls_l2cap_requestConnParamUpdate(16, 32, 0, 200)` in `mesh_ble_connect_cb`. The lamp
+  exposes the Telink OTA service UUID. The observed update to interval 32, latency 0,
+  timeout 200 matches this request. ESPHome never requests these values. Conclusion: the
+  40 ms / 2 s update is very probably requested by the lamp. The proxy log does not show
+  the L2CAP request itself.
+- habluetooth `base_scanner.py` merges service UUIDs and service data of successive
+  advertisements. One Unprovisioned Device packet therefore stays visible in
+  `service_data` until Home Assistant restarts. The raw packet shows the latest content.
+
+### Links opened by the proxy (logs 1, 3, 5, 7, 8)
+
+| Log | Type | Open | Lifetime | End | Parameter updates (seconds after open) |
+|---|---|---|---|---|---|
+| 1 | cached | 10:39:26 | 5.1 s | local (no Proxy Filter Status in 5 s) | none logged (DEBUG level) |
+| 3 | uncached | 10:52:20 | 20.1 s | 0x08, CCCD write status 133 | none logged (DEBUG level) |
+| 5 | uncached | 11:18:20 | 3.2 s | 0x08 | none logged (DEBUG level) |
+| 7 | uncached | 11:47:52 | 3.5 s | 0x08 | 9/800 at 0.11, 32/200 at 1.03 |
+| 8 | uncached | 12:14:28 | 9.9 s | 0x08 | 9/800 at 1.12, beta request failed at 3.69 |
+| 8 | uncached | 12:15:08 | 3.1 s | local (no 0x1828 in table) | 9/800 at 1.55, 32/200 at 2.17 |
+| 8 | uncached | 12:15:54 | 10.6 s | 0x08 | none |
+| 8 | uncached | 12:17:13 | 9.9 s | 0x08 | 9/800 at 2.58, beta request failed at 5.00 |
+
+No uncached link lasted longer than 21 s. Lifetimes near 10 s match a link that stopped
+early under the 8 s or 10 s supervision timeout. Lifetimes near 3 s match the 2 s timeout
+after the 32/200 update. The link loss is therefore not always tied to that update.
+
+### Lamp state across captures
+
+- Working 0.2.1 sessions (08:49, 08:55, 09:04): the lamp advertised Network ID.
+- Every failing session with advertisements (09:25 onwards): Node Identity.
+- 12:15:09: a fresh discovery returned the Telink provisioning layout: 0x1827 visible,
+  the proxy characteristics under 0x7FDD. HA recorded Unprovisioned Device service data
+  from 12:15:12. The 12:17:14 discovery returned the normal proxy layout again.
+- The last authenticated mesh message was received at 11:18:20.
+- The Node Identity random changed at intervals of about 181 s in capture 13. The cause
+  is unknown.
+- Diagnostics `data.version` was hard-coded. Captures 3, 4 and 5 report 0.2.1 there,
+  but `integration_manifest.version` shows 0.2.2 and 0.2.3. 0.2.9b1 reads the manifest.
+
+### What this does and does not explain
+
+The 0.2.2 regression did not come from connection code: 0.2.1 and 0.2.2 have identical
+GATT code. Two hypotheses remain:
+
+- H1, lamp state: the lamp changed state between 09:04 and 09:25 and has dropped links
+  since, independent of the integration.
+- H2, connection path: the uncached proxy path fails with this lamp and the cached path
+  does not.
+
+H2 is supported by the long 0.2.1 sessions, which were probably cached (not observed).
+H2 is weakened by the second 0.2.2 connection at 09:26:56. That connection was probably
+cached and stopped within about 4.6 s. Log 1 is the only observed cached link, and the
+lamp did not answer the proxy filter on it. Neither hypothesis is proven.
+[link-test-procedure.md](link-test-procedure.md) separates them in one test.
+
+Sources:
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/bluetooth_connection/bluetooth_connection_bluedroid.cpp
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/bluetooth_connection/bluetooth_connection_hub.cpp
+- https://github.com/esphome/esphome/blob/2026.9.1/esphome/components/esp32_ble/ble.cpp
+- https://github.com/espressif/esp-idf/blob/release/v5.5/components/bt/host/bluedroid/api/include/api/esp_bt_defs.h
+- https://github.com/espressif/esp-idf/blob/release/v5.5/components/bt/host/bluedroid/btc/core/btc_util.c
+- https://github.com/espressif/esp-idf/blob/release/v5.5/components/bt/host/bluedroid/stack/l2cap/l2c_ble.c
+- https://github.com/espressif/esp-idf/blob/release/v5.5/components/bt/host/bluedroid/stack/l2cap/l2c_main.c
+- https://github.com/zhou-peter/Telink_SIG_Mesh_ADS50_LIGHT (mesh_common.c, `mesh_ble_connect_cb`)
+- https://github.com/telink-semi/tc_ble_mesh (current SDK: request 16, 32, 0, 500)
+- bleak-esphome 4.0.0 and bleak-retry-connector 4.7.1 source distributions (PyPI)
+- https://support.tuya.com/en/help/_detail/K9hut3w10nby8 (three toggles reset lighting products)

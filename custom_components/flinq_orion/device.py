@@ -242,6 +242,14 @@ class OrionDevice:
             self.coordinator.async_set_updated_data(dict(self.coordinator.data))
             raise
 
+    async def probe(self):
+        """One bounded read-only status read; a timeout is not counted as a command failure."""
+        if self.mode == "sig":
+            return await self._request(
+                bytes.fromhex("8201"), 0x8204, model=0x1000, timeout=2, discovery=True
+            )
+        return await self.query(discovery=True)
+
     async def query(self, ids=(0,), *, discovery=False):
         ids = tuple(ids)
         response = await self._request(

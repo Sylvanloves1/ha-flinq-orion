@@ -128,6 +128,7 @@ async def test_diagnostics_redacts_keys(tmp_path):
         "custom_components.flinq_orion.device_profiles", fromlist=["DeviceCapabilities"]
     ).DeviceCapabilities()
     c.records = []
+    c.connection_history = [{"kind": "disconnected", "link_lifetime_s": 3.1}]
     c.codec = None
     entry = SimpleNamespace(
         runtime_data=SimpleNamespace(coordinator=c),
@@ -138,3 +139,27 @@ async def test_diagnostics_redacts_keys(tmp_path):
     assert "secret-appkey" not in str(result)
     assert "private-proxy-address" not in str(result)
     assert result["options"]["iv_index"] == 0
+    assert result["connection_history"][0]["link_lifetime_s"] == 3.1
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_version_comes_from_manifest(tmp_path):
+    import json
+    from pathlib import Path
+    from custom_components.flinq_orion.diagnostics import async_get_config_entry_diagnostics
+
+    manifest = Path(__file__).parents[1] / "custom_components/flinq_orion/manifest.json"
+    c = Mock()
+    c.data, c.records, c.connection_history, c.codec = {}, [], [], None
+    c.capabilities = __import__(
+        "custom_components.flinq_orion.device_profiles", fromlist=["DeviceCapabilities"]
+    ).DeviceCapabilities()
+    entry = SimpleNamespace(runtime_data=SimpleNamespace(coordinator=c), options={})
+    with patch(
+        "custom_components.flinq_orion.diagnostics.async_get_integration",
+        AsyncMock(
+            return_value=SimpleNamespace(version=json.loads(manifest.read_text())["version"])
+        ),
+    ):
+        result = await async_get_config_entry_diagnostics(object(), entry)
+    assert result["version"] == json.loads(manifest.read_text())["version"]

@@ -1,5 +1,7 @@
 from dataclasses import asdict
 from homeassistant.components.diagnostics import async_redact_data
+from homeassistant.loader import async_get_integration
+from .const import DOMAIN
 
 REDACT = {
     "address",
@@ -17,8 +19,10 @@ REDACT = {
 
 async def async_get_config_entry_diagnostics(hass, entry):
     c = entry.runtime_data.coordinator
+    # Read from the manifest: a hard-coded value reported 0.2.1 while 0.2.2/0.2.3 ran.
+    version = str((await async_get_integration(hass, DOMAIN)).version) if hass else "unknown"
     result = {
-        "version": "0.2.7",
+        "version": version,
         "stage": getattr(getattr(c, "device", None), "mode", "observe"),
         "model": "FQC8274",
         "pid": "1ajecbtl",
@@ -30,6 +34,7 @@ async def async_get_config_entry_diagnostics(hass, entry):
         "state": c.data,
         "capabilities": asdict(c.capabilities),
         "device_state": c.device.persist() if getattr(c, "device", None) else {},
+        "connection_history": list(c.connection_history),
         "packets": list(c.records),
         "sequence": entry.runtime_data.session.allocator.diagnostics()
         if getattr(entry.runtime_data, "session", None) and entry.runtime_data.session.allocator
