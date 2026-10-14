@@ -496,3 +496,43 @@ Not established: whether the FlinQ Orion integration (or another Home Assistant
 integration) made the ESPHome proxy connect first in those windows. If it did, the Mac
 attempts lost a race and say nothing about the lamp. If it did not, the lamp also refuses
 or drops connections from an Apple central, which points to the lamp (H1).
+
+## Control link test from a Mac, attempt 2 and passive monitor (2026-10-14)
+
+Conditions: the FlinQ Orion and Bluetooth Mesh (ha-bluetooth-mesh) integrations were
+both disabled (user confirmation). Bluetooth Mesh had been configured for the same lamp
+until about 14:28 UTC. It was therefore active during all earlier captures, and it can
+have opened proxy connections to the lamp at any time.
+
+### Attempt 2 (14:31–14:42 UTC)
+
+| Time (UTC) | Observation |
+|---|---|
+| 14:32:37 | Seen, RSSI -52, Node Identity. Connect attempt: no connection in 20 s |
+| 14:38:59 | Seen, RSSI -47, new random. Connect attempt: no connection in 20 s |
+| 14:41:50 | Seen, RSSI -47, new random. Connect attempt: no connection in 20 s |
+
+No Home Assistant integration competed. Six of six Mac attempts over both runs did not
+establish a link; three of them were in these clean conditions.
+
+### Passive monitor (14:44:46–14:52:48 UTC, no connection attempts by anyone)
+
+Method: 48 scan windows of 10 s. CoreBluetooth reports a device once per scan session, so
+each window is a new session. Control: 13 of 27 nearby devices were seen in 6 of 6
+windows, including a Tuya device at -73 dBm and devices near -95 dBm.
+
+Result: the lamp was seen in 1 of 48 windows (14:50:47, RSSI -47, connectable, Node
+Identity with a new random). It was not seen in the other 47 windows. The last connection
+attempt before the lamp reappeared was at 14:41:50, so the lamp stayed silent for about
+9 minutes without any attempt.
+
+### What this establishes
+
+- The lamp is silent most of the time, also when no Home Assistant integration, no ESP32
+  connection and no Mac connection is involved.
+- An Apple central did not get a link in 3 clean attempts.
+- The failure does not need the integration or the ESP32 proxy.
+
+Not established: whether the lamp is silent because it is in a fault state (for example a
+reset or recovery loop), or because another central outside Home Assistant connects to
+it when it advertises. A Telink peripheral does not advertise while it is connected.

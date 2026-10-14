@@ -13,6 +13,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import time
+from typing import Any
 
 from bleak import BleakClient, BleakScanner
 
@@ -40,18 +41,46 @@ async def find_candidates(seconds: float) -> dict:
     }
 
 
+def connectable(adv) -> bool | None:
+    """CoreBluetooth reports kCBAdvDataIsConnectable; other platforms give None."""
+    platform: Any = getattr(adv, "platform_data", ())
+    try:
+        value = platform[1]["kCBAdvDataIsConnectable"]
+    except (IndexError, KeyError, TypeError):
+        return None
+    return bool(value)
+
+
+def describe(adv) -> dict:
+    data = adv.service_data.get(PROXY_SERVICE, b"")
+    return {
+        "rssi": adv.rssi,
+        "connectable": connectable(adv),
+        "identity_type": data[0] if data else None,
+        "service_data": data.hex(),
+    }
+
+
+async def monitor(args, log: EventLog) -> None:
+    """Passive presence timeline. CoreBluetooth reports a device once per scan session,
+    so short repeated scan windows are used to see whether the lamp keeps advertising."""
+    deadline = time.monotonic() + args.monitor
+    while time.monotonic() < deadline:
+        candidates = await find_candidates(args.window)
+        adv = candidates[args.device][1] if args.device in candidates else None
+        if adv is None and not args.device and len(candidates) == 1:
+            adv = next(iter(candidates.values()))[1]
+        log.emit("window", seen=adv is not None, **(describe(adv) if adv else {}))
+
+
 async def run(args) -> None:
     log = EventLog()
+    if args.monitor:
+        await monitor(args, log)
+        return
     candidates = await find_candidates(args.scan_seconds)
     for address, (_, adv) in candidates.items():
-        data = adv.service_data.get(PROXY_SERVICE, b"")
-        log.emit(
-            "candidate",
-            device=address,
-            rssi=adv.rssi,
-            identity_type=data[0] if data else None,
-            service_data=data.hex(),
-        )
+        log.emit("candidate", device=address, **describe(adv))
     if args.scan_only:
         return
     if args.device:
@@ -119,6 +148,10 @@ def main() -> None:
     parser.add_argument("--seconds", type=float, default=180, help="how long to keep the link")
     parser.add_argument("--interval", type=float, default=10, help="seconds between reads")
     parser.add_argument("--no-notify", action="store_true", help="skip the 0x2ADE subscription")
+    parser.add_argument(
+        "--monitor", type=float, default=0, help="passive presence log for this many seconds"
+    )
+    parser.add_argument("--window", type=float, default=10, help="scan window for --monitor")
     asyncio.run(run(parser.parse_args()))
 
 
