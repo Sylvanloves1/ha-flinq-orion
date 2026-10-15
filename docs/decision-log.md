@@ -440,3 +440,37 @@ README and to provide a description and topics for the repository.
 The integration icon in `custom_components/flinq_orion/brand/` stays (D-020).
 
 **Decision.** As in the Decision column, chosen by Sylvan Loves. Status: settled.
+
+## D-022 Design of pairing (provisioning) in 1.1.0 (2026-10-15)
+
+**Context.** D-017 chose pairing in this integration. This entry records the design answers
+of the planning round and the plan that the user approved.
+
+**Considerations.**
+- An Orion in pairing mode advertised 0x1827 service data with ASCII `key5wvvr` in bytes 8
+  to 15 of its UUID (observed once, 2026-10-14). The cloud PID `1ajecbtl` is not in the UUID.
+- Telink's default GATT layout renames the provisioning and proxy services in place after
+  provisioning and does not disconnect; the Orion showed this layout.
+- Tuya: configuration (AppKey, model bind, composition) must finish within 30 s after
+  provisioning; the behaviour on timeout is not documented.
+- An ESPHome proxy keeps stale GATT services unless `clear_cache()` runs while connected;
+  connecting through it took 3 to 19 s in this installation.
+- How the current lamp was paired is unknown, so pairing on the Orion is unproven.
+
+| Question | Options | Recommended | Decision |
+|---|---|---|---|
+| How the current lamp was paired | `tuya_ble_mesh` after reset; Smart Life first; unknown | n/a | unknown |
+| Lamp for the physical test | second lamp; reset the current lamp; offline only first | second lamp | second lamp |
+| Reset procedure | power toggled 3 times; button; unknown | n/a | hold the mode button (duration to confirm) |
+| Scope | new network and existing network; existing only; new only | both | both |
+| Configuration after Complete | same link with fallback to reconnect; always reconnect | same link with fallback | same link with fallback |
+| Configuration fails after pairing | keep the lamp and offer "Finish configuration"; discard | keep | keep |
+| Devices that can be paired | Orion only; every Tuya SIG Mesh light | Orion only | Orion only |
+| Publication Set to the controller | not now; include | not now | include |
+
+**Recommendation.** As in the Recommended column; the plan is in the approved planning file
+of 2026-10-15.
+
+**Decision.** As in the Decision column, chosen by Sylvan Loves; plan approved. Status:
+settled for the questions; the physical behaviour of the Orion is open until the test on the
+second lamp.
