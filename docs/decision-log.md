@@ -494,3 +494,16 @@ plan did not settle, and one detail differs from the plan. They are recorded for
 the user prefers the plan.
 
 **Decision.** Made during implementation; status: open until reviewed by Sylvan Loves.
+
+## D-024 Beta for the first pairing test (2026-10-15)
+
+**Context.** Pairing (D-022) is tested against sample data and simulated lamps, not on a real
+Orion. D-023 left the first lamp address open for review.
+
+| Question | Options | Recommended | Decision |
+|---|---|---|---|
+| Release of 1.1.0 | prerelease 1.1.0b1 for the test on the second lamp, then pull request and 1.1.0; pull request and 1.1.0 at once; nothing yet | prerelease first | prerelease 1.1.0b1 first |
+| First lamp address (D-023) | from 0x0010; from 0x0002 as in the plan | from 0x0010 | from 0x0010 |
+
+**Decision.** As in the Decision column, chosen by Sylvan Loves. Status: settled. This adds a
+beta step to the release of D-022 and closes the address question of D-023.
