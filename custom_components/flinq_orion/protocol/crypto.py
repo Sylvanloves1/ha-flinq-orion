@@ -1,5 +1,7 @@
 """Bluetooth SIG Mesh key derivation using cryptography primitives."""
 
+import hashlib
+import hmac
 from cryptography.hazmat.primitives.cmac import CMAC
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
@@ -37,3 +39,17 @@ def k1(key: bytes, salt: bytes, info: bytes) -> bytes:
 
 def k3(key: bytes) -> bytes:
     return cmac(cmac(s1(b"smk3"), key), b"id64\x01")[-8:]
+
+
+def hmac_sha256(key: bytes, data: bytes) -> bytes:
+    return hmac.new(key, data, hashlib.sha256).digest()
+
+
+def s2(data: bytes) -> bytes:
+    """Salt function of the HMAC provisioning algorithm (Mesh Protocol 1.1, 3.9.2.11)."""
+    return hmac_sha256(bytes(32), data)
+
+
+def k5(key: bytes, salt: bytes, info: bytes) -> bytes:
+    """Key function of the HMAC provisioning algorithm (Mesh Protocol 1.1, 3.9.2.12)."""
+    return hmac_sha256(hmac_sha256(salt, key), info)

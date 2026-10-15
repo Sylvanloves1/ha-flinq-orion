@@ -3,6 +3,21 @@
 import time
 from .errors import MeshError
 
+NETWORK_PDU, MESH_BEACON, PROXY_CONFIGURATION, PROVISIONING_PDU = range(4)
+
+
+def segments(kind: int, payload: bytes, size: int = 19) -> list[bytes]:
+    """Proxy PDUs for one message: SAR in bits 7–6, type in bits 5–0 (Mesh 6.3.1).
+
+    The default size fits the standard ATT MTU of 23 on local and remote controllers.
+    """
+    chunks = [payload[i : i + size] for i in range(0, len(payload), size)] or [b""]
+    result = []
+    for n, chunk in enumerate(chunks):
+        sar = 0 if len(chunks) == 1 else 1 if n == 0 else 3 if n == len(chunks) - 1 else 2
+        result.append(bytes(((sar << 6) | kind,)) + chunk)
+    return result
+
 
 class ProxySAR:
     def __init__(self):

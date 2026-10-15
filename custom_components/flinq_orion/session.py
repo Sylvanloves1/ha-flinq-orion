@@ -24,7 +24,7 @@ from .protocol.controller import MeshController
 from .protocol.network import NetworkCodec
 from .protocol.sequence import SequenceAllocator
 from .protocol.replay import ReplayProtection
-from .protocol.proxy import ProxySAR
+from .protocol.proxy import ProxySAR, segments
 from .protocol.errors import MeshError, DeviceUnavailableError, FlinqOrionError
 from .protocol.beacon import decode_secure_beacon
 
@@ -34,6 +34,23 @@ REFRESH_SECONDS = 30 * 60
 # One 20 s connection attempt plus margin. Without a deadline, bleak-retry-connector
 # retries "device not seen" errors up to nine times.
 ON_DEMAND_CONNECT_DEADLINE = 25
+
+
+def key_scope(net_key: bytes) -> str:
+    """Network fingerprint in store names; not secret, not reversible."""
+    return hashlib.sha256(net_key).hexdigest()[:24]
+
+
+def controller_stores(hass, identity: str) -> tuple[DurableStore, DurableStore]:
+    """Sequence and replay stores of a controller identity.
+
+    Store names are unchanged since 0.2: the controller identity keeps its sequence.
+    Pairing for a new network uses the same names before the network entry exists.
+    """
+    return (
+        DurableStore(hass, f"{DOMAIN}.sequence.{identity}"),
+        DurableStore(hass, f"{DOMAIN}.replay.{identity}"),
+    )
 
 
 class MeshSession:
@@ -63,13 +80,12 @@ class MeshSession:
         self.idle_handle: asyncio.TimerHandle | None = None
         net_key = bytes.fromhex(self.entry.options["net_key"])
         self.codec = NetworkCodec(net_key)
-        self.key_scope = hashlib.sha256(net_key).hexdigest()[:24]
+        self.key_scope = key_scope(net_key)
         self.source = self.entry.options["source_address"]
         self.iv_index = self.entry.options["iv_index"]
         self.identity = f"{self.key_scope}:{self.source:04x}"
-        # Store names are unchanged since 0.2: the controller identity keeps its sequence.
-        self.store = DurableStore(self.hass, f"{DOMAIN}.sequence.{self.identity}")
-        self.replay = ReplayProtection(DurableStore(self.hass, f"{DOMAIN}.replay.{self.identity}"))
+        self.store, replay_store = controller_stores(self.hass, self.identity)
+        self.replay = ReplayProtection(replay_store)
 
     def record(self, record):
         self.log.record(record)
@@ -263,6 +279,12 @@ class MeshSession:
                 self.touch()
                 return
             self.record({"kind": "idle_disconnect", "link_lifetime_s": self.link_lifetime()})
+            await self._close_link()
+
+    async def close_link(self):
+        """Close the open link; the caller holds `self.lock` (pairing)."""
+        if self.client is not None:
+            self.record({"kind": "idle_disconnect", "reason": "pairing"})
             await self._close_link()
 
     async def _close_link(self):
@@ -554,13 +576,8 @@ class MeshSession:
             client = self.client
             if self.closed or client is None or not client.is_connected:
                 raise DeviceUnavailableError("GATT connection lost")
-            # Standard ATT MTU 23 works for local and remote BLE controllers.
-            chunks = [payload[i : i + 19] for i in range(0, len(payload), 19)]
-            for n, chunk in enumerate(chunks):
-                sar = 0 if len(chunks) == 1 else 1 if n == 0 else 3 if n == len(chunks) - 1 else 2
-                await client.write_gatt_char(
-                    PROXY_IN, bytes(((sar << 6) | kind,)) + chunk, response=False
-                )
+            for segment in segments(kind, payload):
+                await client.write_gatt_char(PROXY_IN, segment, response=False)
 
     async def probe_link(self, lamp, seconds=120, interval=10):
         """Read-only status reads at a fixed interval to measure how long links carry traffic.
