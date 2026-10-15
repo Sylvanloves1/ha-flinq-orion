@@ -1,8 +1,10 @@
 """UI onboarding: a mesh network entry with one subentry per lamp (D-014, D-015).
 
-No provisioning or reset: lamps join with the keys of an existing mesh network.
+Lamps join with the keys of an existing mesh network, or are paired by this integration
+after a factory reset (D-022).
 """
 
+import asyncio
 from hmac import compare_digest
 import re
 from types import MappingProxyType
@@ -20,6 +22,7 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 import voluptuous as vol
+from . import pairing
 from .const import DEFAULT_LAMP_NAME, DOMAIN, NETWORK_TITLE, PROXY_SERVICE, SUBENTRY_LAMP
 from .credential_import import (
     PROVIDER_DOMAIN,
@@ -29,6 +32,8 @@ from .credential_import import (
     CredentialImportError,
 )
 from .protocol.advertisements import identity_material
+from .protocol.errors import FlinqOrionError
+from .protocol.provisioning import ProvisioningError
 
 MAC_ADDRESS = re.compile(r"(?:[0-9A-F]{2}:){5}[0-9A-F]{2}")
 HEX_KEY = re.compile(r"[0-9a-fA-F]{32}")
@@ -133,10 +138,130 @@ def lamp_name(user_input) -> str:
     return str(user_input.get("name", "")).strip() or DEFAULT_LAMP_NAME
 
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+def configured_addresses(hass) -> set[str]:
+    addresses = set()
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        addresses |= {subentry.data.get("address") for subentry in entry.subentries.values()}
+        addresses.add(entry.data.get("address"))
+    addresses.discard(None)
+    return addresses
+
+
+def session_of(entry: ConfigEntry):
+    """Running mesh session of a loaded network with keys, else None."""
+    runtime = getattr(entry, "runtime_data", None)
+    return getattr(runtime, "session", None)
+
+
+def pairing_networks(hass) -> list[ConfigEntry]:
+    return [entry for entry in hass.config_entries.async_entries(DOMAIN) if session_of(entry)]
+
+
+def paired_lamp_data(outcome: pairing.PairingOutcome) -> dict[str, Any]:
+    return {
+        "address": outcome.address,
+        "node_address": outcome.unicast,
+        "device_key": outcome.device_key,
+        "configured": outcome.configured,
+        "paired": True,
+    }
+
+
+# Reasons of ProvisioningError with their own abort text; others use "pair_failed".
+PAIR_REASONS = frozenset(
+    {"not_found", "timeout", "oob_required", "confirmation_failed", "cannot_assign_addresses"}
+)
+
+
+class PairingSteps:
+    """Steps shared by the network flow and the "Add lamp" flow (D-022).
+
+    The subclass provides `_pairing_network()` and `async_step_pair_finish()`.
+    """
+
+    hass: Any
+    _address: str | None = None
+    _name: str = DEFAULT_LAMP_NAME
+    _task: asyncio.Task | None = None
+    _outcome: pairing.PairingOutcome | None = None
+    _reason: str = "pair_failed"
+    _pair_network: pairing.Network | None = None
+
+    async def _pairing_network(self) -> pairing.Network:
+        raise NotImplementedError
+
+    async def async_step_pair(self, user_input=None):
+        errors = {}
+        # A discovered lamp has its address already; otherwise list lamps in pairing mode.
+        lamps = (
+            {}
+            if self._address
+            else pairing.pairable_lamps(self.hass, configured_addresses(self.hass))
+        )
+        if user_input is not None:
+            self._name = lamp_name(user_input)
+            address = user_input.get("address") or self._address
+            if address and (address == self._address or address in lamps):
+                self._address = address
+                return await self.async_step_pair_progress()
+            errors["base"] = "no_lamp_found"
+        schema: dict[Any, Any] = {}
+        if self._address is None and lamps:
+            schema[vol.Required("address")] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(
+                            value=address, label=f"{address} ({info.rssi} dBm)"
+                        )
+                        for address, info in lamps.items()
+                    ],
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            )
+        schema[vol.Required("name", default=self._name)] = str
+        return cast(Any, self).async_show_form(
+            step_id="pair",
+            data_schema=cast(Any, vol.Schema(schema)),
+            errors=errors,
+            description_placeholders={"address": self._address or "-"},
+        )
+
+    async def async_step_pair_progress(self, user_input=None):
+        if self._task is None:
+            self._task = self.hass.async_create_task(self._run_pairing())
+        if not self._task.done():
+            return cast(Any, self).async_show_progress(
+                step_id="pair_progress", progress_action="pairing", progress_task=self._task
+            )
+        try:
+            self._outcome = self._task.result()
+        except ProvisioningError as err:
+            self._reason = f"pair_{err.reason}" if err.reason in PAIR_REASONS else "pair_failed"
+            return cast(Any, self).async_show_progress_done(next_step_id="pair_failed")
+        except Exception:
+            self._reason = "pair_failed"
+            return cast(Any, self).async_show_progress_done(next_step_id="pair_failed")
+        return cast(Any, self).async_show_progress_done(next_step_id="pair_finish")
+
+    async def _run_pairing(self) -> pairing.PairingOutcome:
+        self._pair_network = await self._pairing_network()
+        assert self._address is not None
+        return await pairing.pair(self.hass, self._pair_network, self._address)
+
+    async def _forget_pending(self):
+        """The subentry now holds the DeviceKey; the pending record is no longer needed."""
+        if self._pair_network and self._outcome:
+            await self._pair_network.store.remove_pending(self._outcome.address)
+
+    async def async_step_pair_failed(self, user_input=None):
+        return cast(Any, self).async_abort(reason=self._reason)
+
+
+class ConfigFlow(PairingSteps, config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 2
     _address: str | None = None
     _network: ConfigEntry | None = None
+    _keys: tuple[bytes, bytes] | None = None
 
     @classmethod
     @callback
@@ -152,9 +277,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(address)
         self._abort_if_unique_id_configured()
         if configured_lamp(self.hass, address):
+            # Also a lamp of a network in pairing mode after a power cycle: never pair it
+            # again, it restores its network after the pairing window (D-022).
             return self.async_abort(reason="already_configured")
         self._address = address
         self.context["title_placeholders"] = {"name": address}
+        if pairing.pairable(discovery_info):
+            return await self.async_step_pair_network()
         network = network_for(self.hass, address, discovery_info.service_data)
         if network is not None:
             self._network = network
@@ -163,7 +292,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="not_in_network")
         if not tuya_entries(self.hass, address):
             return self.async_abort(reason="not_identified")
-        return await self.async_step_user()
+        return await self.async_step_manual()
 
     async def async_step_add_lamp(self, user_input=None) -> ConfigFlowResult:
         network, address = self._network, self._address
@@ -192,6 +321,95 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_user(self, user_input=None) -> ConfigFlowResult:
+        return self.async_show_menu(step_id="user", menu_options=["pair_network", "manual"])
+
+    async def async_step_pair_network(self, user_input=None) -> ConfigFlowResult:
+        """Pair into a running network, or into a new network with generated keys."""
+        networks = {entry.entry_id: entry for entry in pairing_networks(self.hass)}
+        if user_input is None and self.source == config_entries.SOURCE_BLUETOOTH:
+            if len(networks) == 1:
+                # A lamp found in pairing mode joins the only network (D-022).
+                self._network = next(iter(networks.values()))
+                return await self.async_step_pair()
+        if user_input is not None or not networks:
+            choice = (user_input or {}).get("network", "new")
+            self._network = networks.get(choice)
+            return await self.async_step_pair()
+        return self.async_show_form(
+            step_id="pair_network",
+            data_schema=cast(
+                Any,
+                vol.Schema(
+                    {
+                        vol.Required("network"): selector.SelectSelector(
+                            selector.SelectSelectorConfig(
+                                options=[
+                                    selector.SelectOptionDict(value=entry_id, label=entry.title)
+                                    for entry_id, entry in networks.items()
+                                ]
+                                + [selector.SelectOptionDict(value="new", label="+")],
+                                translation_key="network",
+                                mode=selector.SelectSelectorMode.LIST,
+                            )
+                        )
+                    }
+                ),
+            ),
+        )
+
+    async def _pairing_network(self) -> pairing.Network:
+        if self._network is not None and (session := session_of(self._network)):
+            return await pairing.network_from_session(self.hass, session)
+        self._keys = pairing.new_keys()
+        return await pairing.new_network(self.hass, *self._keys)
+
+    async def async_step_pair_finish(self, user_input=None) -> ConfigFlowResult:
+        outcome = self._outcome
+        assert outcome is not None
+        data = paired_lamp_data(outcome)
+        if self._network is not None:
+            self.hass.config_entries.async_add_subentry(
+                self._network,
+                ConfigSubentry(
+                    data=MappingProxyType(data),
+                    subentry_type=SUBENTRY_LAMP,
+                    title=self._name,
+                    unique_id=outcome.address,
+                ),
+            )
+            await self._forget_pending()
+            return self.async_abort(
+                reason="lamp_paired", description_placeholders={"network": self._network.title}
+            )
+        assert self._keys is not None
+        net_key, app_key = self._keys
+        await self.async_set_unique_id(identity_material(net_key)[0].hex(), raise_on_progress=False)
+        await self._forget_pending()
+        return self.async_create_entry(
+            title=NETWORK_TITLE,
+            data={},
+            options={
+                "transport_mode": "sig",
+                "connection_mode": "on_demand",
+                "net_key": net_key.hex(),
+                "app_key": app_key.hex(),
+                "iv_index": 0,
+                # A new network: no other controller has ever used this address.
+                "source_address": 1,
+                "new_source_confirmed": True,
+                "availability_timeout": 300,
+            },
+            subentries=[
+                ConfigSubentryData(
+                    data=data,
+                    subentry_type=SUBENTRY_LAMP,
+                    title=self._name,
+                    unique_id=outcome.address,
+                )
+            ],
+        )
+
+    async def async_step_manual(self, user_input=None) -> ConfigFlowResult:
         errors = {}
         if user_input is not None:
             address = str(user_input["address"]).strip().upper()
@@ -222,7 +440,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ],
                 )
         return self.async_show_form(
-            step_id="user",
+            step_id="manual",
             data_schema=cast(
                 Any,
                 vol.Schema(
@@ -241,10 +459,72 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return OptionsFlow()
 
 
-class LampFlow(config_entries.ConfigSubentryFlow):
-    """Add a lamp of this network, or change its name, mesh address or DeviceKey."""
+class LampFlow(PairingSteps, config_entries.ConfigSubentryFlow):
+    """Pair or add a lamp of this network, or change its settings and configuration."""
 
     async def async_step_user(self, user_input=None) -> SubentryFlowResult:
+        options = ["existing"]
+        if session_of(self._get_entry()):
+            options.insert(0, "pair")
+            if await self._restorable():
+                options.append("restore")
+        return self.async_show_menu(step_id="user", menu_options=options)
+
+    async def _pairing_network(self) -> pairing.Network:
+        session = session_of(self._get_entry())
+        if session is None:
+            raise ProvisioningError("not_found", "The network has no running mesh session")
+        return await pairing.network_from_session(self.hass, session)
+
+    async def async_step_pair_finish(self, user_input=None) -> SubentryFlowResult:
+        outcome = self._outcome
+        assert outcome is not None
+        await self._forget_pending()
+        return self.async_create_entry(
+            title=self._name, data=paired_lamp_data(outcome), unique_id=outcome.address
+        )
+
+    async def _restorable(self) -> list[dict]:
+        """Pairings that ended after Complete without a lamp subentry (restart, crash)."""
+        session = session_of(self._get_entry())
+        if session is None:
+            return []
+        store = pairing.PairingStore(self.hass, session.key_scope)
+        await store.load()
+        known = configured_addresses(self.hass)
+        return [record for record in store.pending if record["address"] not in known]
+
+    async def async_step_restore(self, user_input=None) -> SubentryFlowResult:
+        records = {record["address"]: record for record in await self._restorable()}
+        if user_input is not None and user_input["address"] in records:
+            record = records[user_input["address"]]
+            return self.async_create_entry(
+                title=lamp_name(user_input),
+                data={
+                    "address": record["address"],
+                    "node_address": record["unicast"],
+                    "device_key": record["device_key"],
+                    "configured": False,
+                    "paired": True,
+                },
+                unique_id=record["address"],
+            )
+        if not records:
+            return self.async_abort(reason="nothing_to_restore")
+        return self.async_show_form(
+            step_id="restore",
+            data_schema=cast(
+                Any,
+                vol.Schema(
+                    {
+                        vol.Required("address"): vol.In(sorted(records)),
+                        vol.Required("name", default=DEFAULT_LAMP_NAME): str,
+                    }
+                ),
+            ),
+        )
+
+    async def async_step_existing(self, user_input=None) -> SubentryFlowResult:
         network = self._get_entry()
         errors = {}
         if user_input is not None:
@@ -273,7 +553,7 @@ class LampFlow(config_entries.ConfigSubentryFlow):
                 )
             )
         return self.async_show_form(
-            step_id="user",
+            step_id="existing",
             data_schema=cast(
                 Any,
                 vol.Schema(
@@ -287,6 +567,48 @@ class LampFlow(config_entries.ConfigSubentryFlow):
         )
 
     async def async_step_reconfigure(self, user_input=None) -> SubentryFlowResult:
+        subentry = self._get_reconfigure_subentry()
+        if user_input is None and subentry.data.get("configured", True) is False:
+            return self.async_show_menu(step_id="reconfigure", menu_options=["finish", "settings"])
+        return await self.async_step_settings(user_input)
+
+    async def async_step_finish(self, user_input=None) -> SubentryFlowResult:
+        """Repeat AppKey Add, binds and publication over the normal network link."""
+        if self._task is None:
+            self._task = self.hass.async_create_task(self._finish())
+        if not self._task.done():
+            return self.async_show_progress(
+                step_id="finish", progress_action="configuring", progress_task=self._task
+            )
+        try:
+            configured = self._task.result()
+        except (FlinqOrionError, TimeoutError):
+            configured = False
+        return self.async_show_progress_done(
+            next_step_id="finish_done" if configured else "finish_failed"
+        )
+
+    async def _finish(self) -> bool:
+        network = self._get_entry()
+        subentry = self._get_reconfigure_subentry()
+        session = session_of(network)
+        lamp = network.runtime_data.lamps.get(subentry.subentry_id) if session else None
+        if session is None or lamp is None:
+            return False
+        result = await pairing.finish_configuration(session, lamp.coordinator)
+        return result.configured
+
+    async def async_step_finish_done(self, user_input=None) -> SubentryFlowResult:
+        network = self._get_entry()
+        subentry = self._get_reconfigure_subentry()
+        return self.async_update_and_abort(
+            network, subentry, data={**subentry.data, "configured": True}, reason="configured"
+        )
+
+    async def async_step_finish_failed(self, user_input=None) -> SubentryFlowResult:
+        return self.async_abort(reason="finish_failed")
+
+    async def async_step_settings(self, user_input=None) -> SubentryFlowResult:
         network = self._get_entry()
         subentry = self._get_reconfigure_subentry()
         errors = {}
@@ -311,7 +633,7 @@ class LampFlow(config_entries.ConfigSubentryFlow):
                     self.hass.config_entries.async_schedule_reload(network.entry_id)
                 return result
         return self.async_show_form(
-            step_id="reconfigure",
+            step_id="settings",
             data_schema=cast(
                 Any,
                 vol.Schema(

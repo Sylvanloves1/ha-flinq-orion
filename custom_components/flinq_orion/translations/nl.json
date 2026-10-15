@@ -5,6 +5,28 @@
     "step": {
       "user": {
         "title": "FlinQ Orion",
+        "menu_options": {
+          "pair_network": "Nieuwe lamp koppelen (koppelmodus)",
+          "manual": "Lamp toevoegen met bestaande meshkeys"
+        }
+      },
+      "pair_network": {
+        "title": "Kies het meshnetwerk",
+        "description": "Koppel de lamp aan een van je netwerken, of maak een nieuw netwerk met nieuwe keys.",
+        "data": {
+          "network": "Meshnetwerk"
+        }
+      },
+      "pair": {
+        "title": "Lamp koppelen",
+        "description": "Houd de modusknop van de lamp ingedrukt tot hij knippert: hij staat dan maximaal 6 minuten in koppelmodus. Houd de lamp dicht bij een Bluetooth-proxy. Koppelen zet de lamp in dit netwerk: hij verlaat Smart Life. Lamp: {address}.",
+        "data": {
+          "address": "Lamp in koppelmodus",
+          "name": "Naam van de lamp"
+        }
+      },
+      "manual": {
+        "title": "Lamp toevoegen met bestaande meshkeys",
         "description": "Voeg een lamp toe zonder reset. Een lamp van een geconfigureerd meshnetwerk wordt aan dat netwerk toegevoegd. Anders ontstaat een nieuw netwerk: stel daarna de bestaande meshkeys in via Opties. Zonder keys blijft de integratie in observatiemodus.",
         "data": {
           "address": "Bluetoothadres",
@@ -20,13 +42,24 @@
       }
     },
     "error": {
-      "invalid_address": "Ongeldig Bluetoothadres"
+      "invalid_address": "Ongeldig Bluetoothadres",
+      "no_lamp_found": "Geen lamp in koppelmodus gevonden. Zet de lamp in koppelmodus en probeer het opnieuw."
     },
     "abort": {
       "already_configured": "Deze lamp is al geconfigureerd",
       "lamp_added": "De lamp is toegevoegd aan het netwerk {network}",
       "not_in_network": "Het apparaat hoort niet bij een geconfigureerd meshnetwerk",
-      "not_identified": "Het apparaat is niet herkend als FlinQ Orion-lamp; voeg het handmatig toe"
+      "not_identified": "Het apparaat is niet herkend als FlinQ Orion-lamp; voeg het handmatig toe",
+      "lamp_paired": "De lamp is gekoppeld aan het netwerk {network}",
+      "pair_not_found": "De lamp is niet bereikbaar. Controleer of hij in koppelmodus staat en dicht bij een Bluetooth-proxy is.",
+      "pair_timeout": "De lamp antwoordde niet meer tijdens het koppelen. Zet hem opnieuw in koppelmodus en probeer het nog eens.",
+      "pair_oob_required": "De lamp vraagt een authenticatiewaarde die deze integratie niet kent.",
+      "pair_confirmation_failed": "De lamp kwam niet door de beveiligingscontrole van het koppelen.",
+      "pair_cannot_assign_addresses": "Er is geen vrij meshadres meer in dit netwerk.",
+      "pair_failed": "Koppelen is mislukt. Zet de lamp opnieuw in koppelmodus en probeer het nog eens; download de diagnostics als het blijft mislukken."
+    },
+    "progress": {
+      "pairing": "De lamp wordt gekoppeld en ingesteld. Dit duurt tot een minuut. Houd de lamp dicht bij de Bluetooth-proxy."
     }
   },
   "config_subentries": {
@@ -38,13 +71,44 @@
       "step": {
         "user": {
           "title": "Lamp toevoegen",
+          "menu_options": {
+            "pair": "Nieuwe lamp koppelen (koppelmodus)",
+            "existing": "Lamp toevoegen die al in dit netwerk zit",
+            "restore": "Onderbroken koppeling herstellen"
+          }
+        },
+        "pair": {
+          "title": "Lamp koppelen",
+          "description": "Houd de modusknop van de lamp ingedrukt tot hij knippert: hij staat dan maximaal 6 minuten in koppelmodus. Houd de lamp dicht bij een Bluetooth-proxy. Koppelen zet de lamp in dit netwerk: hij verlaat Smart Life. Lamp: {address}.",
+          "data": {
+            "address": "Lamp in koppelmodus",
+            "name": "Naam van de lamp"
+          }
+        },
+        "existing": {
+          "title": "Lamp toevoegen die al in dit netwerk zit",
           "description": "Kies een lamp in de buurt of vul het Bluetoothadres in. 'This network' betekent dat de lamp de Network ID van deze keys uitzendt. Een lamp met een lege accu zendt alleen Node Identity uit en staat als 'network not verified'. Het meshadres wordt bij de eerste verbinding herkend.",
           "data": {
             "address": "Bluetoothadres",
             "name": "Naam van de lamp"
           }
         },
+        "restore": {
+          "title": "Onderbroken koppeling herstellen",
+          "description": "Het koppelen van deze lamp stopte nadat de lamp het netwerk in ging, bijvoorbeeld door een herstart. De lamp wordt toegevoegd met zijn opgeslagen DeviceKey; gebruik daarna Opnieuw configureren, Configuratie afmaken.",
+          "data": {
+            "address": "Bluetoothadres",
+            "name": "Naam van de lamp"
+          }
+        },
         "reconfigure": {
+          "title": "Lamp",
+          "menu_options": {
+            "finish": "Configuratie afmaken",
+            "settings": "Lampinstellingen"
+          }
+        },
+        "settings": {
           "title": "Lampinstellingen",
           "description": "Meshadres 0 betekent: herkennen bij de volgende verbinding. De DeviceKey is optioneel en wordt alleen gebruikt voor compositiegegevens en modelbinding.",
           "data": {
@@ -58,10 +122,24 @@
         "invalid_address": "Ongeldig Bluetoothadres",
         "lamp_configured": "Deze lamp is al geconfigureerd",
         "invalid_key": "Voer een niet-nulle 128-bits hexadecimale sleutel in",
-        "invalid_node": "Het lampadres moet verschillen van het controlleradres"
+        "invalid_node": "Het lampadres moet verschillen van het controlleradres",
+        "no_lamp_found": "Geen lamp in koppelmodus gevonden. Zet de lamp in koppelmodus en probeer het opnieuw."
       },
       "abort": {
-        "reconfigure_successful": "De lampinstellingen zijn opgeslagen"
+        "reconfigure_successful": "De lampinstellingen zijn opgeslagen",
+        "pair_not_found": "De lamp is niet bereikbaar. Controleer of hij in koppelmodus staat en dicht bij een Bluetooth-proxy is.",
+        "pair_timeout": "De lamp antwoordde niet meer tijdens het koppelen. Zet hem opnieuw in koppelmodus en probeer het nog eens.",
+        "pair_oob_required": "De lamp vraagt een authenticatiewaarde die deze integratie niet kent.",
+        "pair_confirmation_failed": "De lamp kwam niet door de beveiligingscontrole van het koppelen.",
+        "pair_cannot_assign_addresses": "Er is geen vrij meshadres meer in dit netwerk.",
+        "pair_failed": "Koppelen is mislukt. Zet de lamp opnieuw in koppelmodus en probeer het nog eens; download de diagnostics als het blijft mislukken.",
+        "configured": "De lamp is ingesteld",
+        "finish_failed": "De configuratie is niet afgerond. Controleer de accu en de afstand tot de Bluetooth-proxy en probeer het opnieuw.",
+        "nothing_to_restore": "Er is geen onderbroken koppeling om te herstellen"
+      },
+      "progress": {
+        "pairing": "De lamp wordt gekoppeld en ingesteld. Dit duurt tot een minuut. Houd de lamp dicht bij de Bluetooth-proxy.",
+        "configuring": "De lamp wordt ingesteld: AppKey, modelbindingen en publicatie. Houd de lamp dicht bij de Bluetooth-proxy."
       }
     }
   },
@@ -108,6 +186,19 @@
       "import_iv_mismatch": "De opgeslagen IV Index wijkt af van de geauthenticeerde beacon; herstel is vereist",
       "import_key_refresh": "De geauthenticeerde beacon meldt een key-refresh; deze import kan niet veilig activeren",
       "network_in_use": "Een andere configuratie gebruikt deze NetKey al; voeg de lamp aan dat netwerk toe"
+    }
+  },
+  "selector": {
+    "network": {
+      "options": {
+        "new": "Nieuw meshnetwerk"
+      }
+    }
+  },
+  "issues": {
+    "configuration_incomplete": {
+      "title": "Maak de configuratie van {name} af",
+      "description": "{name} is gekoppeld, maar de configuratie is niet afgerond, dus hij reageert nog niet op opdrachten. Open de lamp onder FlinQ Orion, kies Opnieuw configureren en daarna Configuratie afmaken."
     }
   },
   "entity": {

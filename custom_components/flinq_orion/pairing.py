@@ -14,7 +14,7 @@ import time
 from typing import Any
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from homeassistant.components import bluetooth
-from .const import DOMAIN, PROXY_OUT
+from .const import DOMAIN, PROXY_IN, PROXY_OUT
 from .device_profiles import FLINQ_ORION_FQC8274_PROFILE as PROFILE
 from .protocol import provisioning as prov, sig
 from .protocol.advertisements import PROXY, raw_service_data, unprovisioned_device
@@ -31,7 +31,6 @@ from .storage import DurableStore
 
 PROVISIONING_IN = "00002adb-0000-1000-8000-00805f9b34fb"
 PROVISIONING_OUT = "00002adc-0000-1000-8000-00805f9b34fb"
-PROXY_IN_UUID = "00002add-0000-1000-8000-00805f9b34fb"
 # A Tuya bulb ignored an Invite sent directly after connecting (tuya-ble-mesh PR #3).
 SETTLE_SECONDS = 1.5
 INVITE_ATTEMPTS = 3
@@ -350,7 +349,7 @@ class PairingLink:
             network.iv_index,
             network.allocator,
             network.replay,
-            lambda kind, payload: self.send(kind, payload, PROXY_IN_UUID),
+            lambda kind, payload: self.send(kind, payload, PROXY_IN),
             self._response,
             network.record,
         )

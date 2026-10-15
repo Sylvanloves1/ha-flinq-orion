@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 from homeassistant.core import HomeAssistant
 from custom_components.flinq_orion import pairing
+from custom_components.flinq_orion.const import PROXY_IN
 from custom_components.flinq_orion.protocol import provisioning as prov
 from custom_components.flinq_orion.protocol.access import decode_access
 from custom_components.flinq_orion.protocol.crypto import cmac, hmac_sha256, k1, k5, s1, s2
@@ -206,7 +207,7 @@ class Client:
         if uuid == pairing.PROVISIONING_IN:
             for reply in self.lamp.provisionee.handle(payload):
                 self.inject(3, reply)
-        elif uuid == pairing.PROXY_IN_UUID and self.answer_proxy:
+        elif uuid == PROXY_IN and self.answer_proxy:
             await self.lamp.mesh().send(kind, payload)
 
     async def clear_cache(self):

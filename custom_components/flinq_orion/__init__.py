@@ -4,19 +4,26 @@ A config entry is one mesh network; each lamp is a config subentry (D-014, D-015
 """
 
 from dataclasses import dataclass, asdict, field
+import logging
 from types import MappingProxyType
 from typing import Any, cast
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ConfigEntryError
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 import voluptuous as vol
 from .const import DOMAIN, LEGACY_NODE_ADDRESS, SUBENTRY_LAMP
 from .coordinator import LampEntry, OrionCoordinator
 from .bluetooth import Inspector
 from .protocol.advertisements import identity_material
+from .pairing import PairingStore
 from .session import MeshSession
 
+_LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor", "binary_sensor", "light", "switch", "button"]
 # Entities that earlier versions created and that are no longer provided (D-013).
 RETIRED_ENTITY_KEYS = (
@@ -49,6 +56,41 @@ def remove_retired_entities(hass: HomeAssistant, entry: ConfigEntry, address: st
     for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
         if entity.unique_id in retired:
             registry.async_remove(entity.entity_id)
+
+
+def sync_configuration_issues(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """A repair issue per paired lamp whose configuration did not finish (D-022)."""
+    wanted = {}
+    for subentry in entry.subentries.values():
+        issue_id = f"configuration_{subentry.subentry_id}"
+        if subentry.data.get("configured", True) is False:
+            wanted[issue_id] = subentry.title
+            ir.async_create_issue(
+                hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="configuration_incomplete",
+                translation_placeholders={"name": subentry.title},
+            )
+    for subentry_id in entry.subentries:
+        issue_id = f"configuration_{subentry_id}"
+        if issue_id not in wanted:
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
+
+
+async def log_interrupted_pairings(hass: HomeAssistant, session: MeshSession) -> None:
+    store = PairingStore(hass, session.key_scope)
+    await store.load()
+    known = {lamp.address for lamp in session.lamps}
+    for record in store.pending:
+        if record["address"] not in known:
+            _LOGGER.warning(
+                "A lamp was paired at mesh address %s but has no lamp entry; "
+                "restore it with Add lamp, Restore an interrupted pairing",
+                record["unicast"],
+            )
 
 
 def network_unique_id(options) -> str | None:
@@ -191,7 +233,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         remove_retired_entities(hass, entry, lamp.coordinator.address)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(reload_entry))
+    sync_configuration_issues(hass, entry)
     if runtime.session:
+        await log_interrupted_pairings(hass, runtime.session)
         for lamp in lamps.values():
             runtime.session.schedule_connect(lamp.coordinator)
     if not hass.services.has_service(DOMAIN, "capture"):

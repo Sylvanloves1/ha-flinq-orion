@@ -18,7 +18,7 @@ After the download and a restart:
 
 [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=flinq_orion)
 
-Read [Requirements](#requirements) first: you need the mesh keys of your lamp.
+Then pair a lamp in pairing mode, or add a lamp with existing mesh keys. See [Setup](#setup).
 
 ## Features
 
@@ -26,6 +26,7 @@ Read [Requirements](#requirements) first: you need the mesh keys of your lamp.
 - 🏃 **Motion sensor switch**: turn motion detection of the lamp on or off.
 - 🔋 **Battery status**: shows "Empty" when the lamp goes into its low-power cycle.
 - 📶 **Signal strength** of the lamp.
+- 🔗 **Pairing**: pair a reset lamp directly from Home Assistant. No app, no account, no keys needed.
 - 🕸️ **One mesh network, many lamps**: set the keys once, then add lamps from a list of nearby lamps.
 - 🔌 **On-demand connections**: a short Bluetooth link per command, which saves the lamp battery.
 - 🏠 **Local only**: no Internet connection or Tuya account is needed for daily use.
@@ -42,6 +43,7 @@ Tested with one Orion through an ESPHome Bluetooth proxy on Home Assistant 2026.
 | Motion sensor switch | Built from the Tuya data point schema; the physical result is not confirmed yet |
 | Battery status | Derived from the advertising pattern of the lamp; the lamp has no battery data point |
 | Several lamps through one link | Tested with simulated lamps only |
+| Pairing | Tested against the official Bluetooth Mesh sample data and with simulated lamps; not yet on a real Orion |
 
 Please report your results in an [issue](https://github.com/Sylvanloves1/ha-flinq-orion/issues), with the diagnostics attached.
 
@@ -49,12 +51,9 @@ Please report your results in an [issue](https://github.com/Sylvanloves1/ha-flin
 
 - **Home Assistant 2026.9 or newer.**
 - **Bluetooth near the lamp**: the Home Assistant Bluetooth integration with a local adapter, or an [ESPHome Bluetooth proxy](https://esphome.io/components/bluetooth_proxy.html) with active connections enabled.
-- **The mesh keys of the lamp**: NetKey, AppKey and the IV Index. The integration does not read keys from the Smart Life app or the Tuya cloud; no public way to get them from Tuya is known. Today there are two ways:
-  - Import them from the [Tuya BLE Mesh](https://github.com/11z4t/tuya-ble-mesh) integration, if that integration added your lamp.
-  - Enter them by hand.
-
-  Pairing a new or reset lamp directly from this integration (provisioning) is planned. See [Limitations and roadmap](#limitations-and-roadmap).
-- **A free controller address**: a mesh unicast address (decimal) that no app, gateway or other controller has ever used in this mesh network.
+- **One of these:**
+  - **A lamp you can reset.** The integration pairs it and creates the mesh network with new keys. The lamp then leaves Smart Life.
+  - **The mesh keys of an existing network**: NetKey, AppKey and the IV Index, imported from the [Tuya BLE Mesh](https://github.com/11z4t/tuya-ble-mesh) integration or entered by hand, plus a free controller address. The integration does not read keys from the Smart Life app or the Tuya cloud; no public way to get them from Tuya is known.
 
 ## Installation
 
@@ -76,15 +75,31 @@ The "Quick install" button above does steps 1 to 3 for you.
 
 ## Setup
 
-### 1. Add the mesh network and the first lamp
+### Pair a lamp (no keys needed)
 
-Go to **Settings → Devices & services → Add integration → FlinQ Orion**. Enter the Bluetooth address and a name of your first lamp. This creates the mesh network with the lamp in it.
+1. Put the lamp in pairing mode: hold its mode button until the lamp blinks. Pairing mode lasts up to 6 minutes.
+2. Go to **Settings → Devices & services → Add integration → FlinQ Orion → Pair a new lamp**. Home Assistant can also offer the lamp itself as a discovered device.
+3. Select the lamp, give it a name and wait up to a minute. Keep the lamp close to the Bluetooth proxy.
+
+The integration creates a new mesh network with random keys, or uses one of your networks. It pairs the lamp, adds the AppKey, binds the light models and the Tuya model, and asks the lamp to send its state changes to the controller address of Home Assistant. Home Assistant receives them while a Bluetooth link is open.
+
+To pair more lamps, open the network and select **Add lamp → Pair a new lamp**.
+
+If the lamp joined the network but its configuration did not finish, Home Assistant shows a repair notice. Open the lamp, select **Reconfigure → Finish configuration**. If Home Assistant restarted during pairing, use **Add lamp → Restore an interrupted pairing**.
+
+A lamp that is already in one of your networks is never offered for pairing, also when it blinks after a power cycle: it returns to its network after the pairing window.
+
+### Add a lamp with existing mesh keys
+
+#### 1. Add the mesh network and the first lamp
+
+Go to **Settings → Devices & services → Add integration → FlinQ Orion → Add a lamp with existing mesh keys**. Enter the Bluetooth address and a name of your first lamp. This creates the mesh network with the lamp in it.
 
 Home Assistant can also find the lamp itself. It offers a lamp only when the lamp belongs to a network that you already configured, or when the Tuya BLE Mesh integration holds the lamp. Mesh devices of your neighbours are ignored.
 
 Without keys the integration stays in observation mode: it shows the signal strength and collects diagnostics, but it does not send anything.
 
-### 2. Enter the keys
+#### 2. Enter the keys
 
 Before you activate the network:
 
@@ -106,9 +121,9 @@ Open the network and select **Configure**:
 | `sig` | Standard SIG Mesh light control (recommended for the Orion) |
 | `vendor_dp` | Experimental control through Tuya data points |
 
-### 3. Add more lamps
+#### 3. Add more lamps
 
-Open the network and select **Add lamp**. The list shows nearby lamps. Lamps that advertise the Network ID of your keys come first, marked "this network". A lamp with a low battery is marked "network not verified". You can also type the Bluetooth address.
+Open the network and select **Add lamp → Add a lamp that is already in this network**. The list shows nearby lamps. Lamps that advertise the Network ID of your keys come first, marked "this network". A lamp with a low battery is marked "network not verified". You can also type the Bluetooth address.
 
 The mesh address of a lamp is found on its first connection. To rename a lamp, or to change its mesh address or DeviceKey, select **Reconfigure** on the lamp.
 
@@ -190,7 +205,9 @@ Never share your keys, a full backup or an unfiltered Bluetooth capture.
 
 ## Limitations and roadmap
 
-- **No pairing from this integration yet.** You need the keys of an existing mesh network. Provisioning of new or reset lamps is planned for a 1.x release. It will need a factory reset, and the lamp then leaves Smart Life.
+- **Pairing is not yet tested on a real Orion.** It is tested against the official sample data and simulated lamps. A paired lamp leaves Smart Life.
+- Removing a lamp from Home Assistant does not remove it from the mesh network. Reset the lamp if you want to use it elsewhere.
+- If Home Assistant restarts during the first pairing of a new network, the new keys are lost: reset the lamp and pair it again.
 - The lamp does not send its own changes to Home Assistant.
 - Forwarding between two physical lamps over one link is not tested yet.
 - Colour and colour temperature mapping are not physically confirmed.
@@ -208,7 +225,7 @@ Never share your keys, a full backup or an unfiltered Bluetooth capture.
 - [Technical notes](docs/technical.md): protocol modes, key import details and the first hardware test
 - [Protocol findings](docs/protocol.md): what is known about the lamp, with captures
 - [Decision log](docs/decision-log.md): why the integration works the way it does
-- [Test status](docs/testing.md) and test procedures ([network](docs/network-test.md), [on demand](docs/on-demand-test.md), [link](docs/link-test-procedure.md))
+- [Test status](docs/testing.md) and test procedures ([pairing](docs/pairing-test.md), [network](docs/network-test.md), [on demand](docs/on-demand-test.md), [link](docs/link-test-procedure.md))
 - [Development](docs/development.md)
 
 ## Contributing
