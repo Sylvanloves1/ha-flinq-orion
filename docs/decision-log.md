@@ -474,3 +474,23 @@ of 2026-10-15.
 **Decision.** As in the Decision column, chosen by Sylvan Loves; plan approved. Status:
 settled for the questions; the physical behaviour of the Orion is open until the test on the
 second lamp.
+
+## D-023 Implementation choices in 1.1.0 (2026-10-15)
+
+**Context.** While building the approved pairing plan (D-022), some details came up that the
+plan did not settle, and one detail differs from the plan. They are recorded for review.
+
+| Question | Plan | Choice | Reason |
+|---|---|---|---|
+| First lamp address | lowest free block from 0x0002 | lowest free block from 0x0010 | room for controller addresses: the existing network already uses 1 (Tuya BLE Mesh) and 2 (this integration) |
+| Name of the pairing store | `flinq_orion.{entry_id}.pairing` | `flinq_orion.pairing.{network fingerprint}` | a new network has no entry ID before its first lamp is paired |
+| "Pair a new lamp" from Add integration when networks exist | not settled | choose a network or "New mesh network" | the same screen serves discovery with two or more networks |
+| Order of model binds | light and vendor models first | light models, then the Tuya vendor model, then the other non-foundation models | the light works first if the lamp stops configuration early |
+| Models that publish to the controller | 0x1000, 0x1300, 0x1303, 0x1307 | as planned; the Tuya vendor model does not publish | unknown what the vendor model publishes |
+| Restart during the first pairing of a new network | not settled | the new keys are lost; the README says to reset and pair again | keys are stored only when the network entry is created |
+| Result when a lamp is in pairing mode in a configured network | never offered | as planned, also in discovery | the working lamp entered pairing mode by itself on 2026-10-14 |
+
+**Recommendation.** Keep these choices; change the first lamp address back to 0x0002 only if
+the user prefers the plan.
+
+**Decision.** Made during implementation; status: open until reviewed by Sylvan Loves.
