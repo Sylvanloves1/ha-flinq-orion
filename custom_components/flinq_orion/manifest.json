@@ -1,7 +1,7 @@
 {
   "domain": "flinq_orion",
   "name": "FlinQ Orion",
-  "version": "1.1.0b1",
+  "version": "1.1.0",
   "config_flow": true,
   "documentation": "https://github.com/Sylvanloves1/ha-flinq-orion",
   "issue_tracker": "https://github.com/Sylvanloves1/ha-flinq-orion/issues",

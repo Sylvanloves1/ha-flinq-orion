@@ -777,3 +777,10 @@ One observation, one lamp.
 - 12:17:14: the next discovery returned the proxy layout again. The lamp returned to its
   network by itself after about 2 minutes. Tuya documents 6 minutes for the TLSR825x light;
   the cause of the shorter time is unknown.
+
+## First pairing of an Orion by this integration (2026-10-16)
+
+User report with 1.1.0b1: the second lamp was put in pairing mode with its mode button and
+paired into the existing network through "Add lamp, Pair a new lamp". Both lamps work. This is
+one observation without diagnostics: the Capabilities (algorithm, element count), the
+configuration results and the address that the lamp received are not recorded.

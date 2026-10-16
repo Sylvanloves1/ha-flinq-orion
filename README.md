@@ -42,8 +42,8 @@ Tested with one Orion through an ESPHome Bluetooth proxy on Home Assistant 2026.
 | Brightness, colour, colour temperature | The lamp reports these states; the physical result is not confirmed yet. Colour temperature uses 2000–6500 K, the range of the Home Assistant Tuya integration. |
 | Motion sensor switch | Built from the Tuya data point schema; the physical result is not confirmed yet |
 | Battery status | Derived from the advertising pattern of the lamp; the lamp has no battery data point |
-| Several lamps through one link | Tested with simulated lamps only |
-| Pairing | Tested against the official Bluetooth Mesh sample data and with simulated lamps; not yet on a real Orion |
+| Several lamps in one network | Two lamps in one network work (user report, 2026-10-16); whether commands went through one link is not recorded yet |
+| Pairing | Paired once on a real Orion (user report, 2026-10-16); also tested against the official Bluetooth Mesh sample data and with simulated lamps |
 
 Please report your results in an [issue](https://github.com/Sylvanloves1/ha-flinq-orion/issues), with the diagnostics attached.
 
@@ -205,11 +205,11 @@ Never share your keys, a full backup or an unfiltered Bluetooth capture.
 
 ## Limitations and roadmap
 
-- **Pairing is not yet tested on a real Orion.** It is tested against the official sample data and simulated lamps. A paired lamp leaves Smart Life.
+- **Pairing worked once on a real Orion.** Which functions of the paired lamp work physically is not recorded yet. A paired lamp leaves Smart Life.
 - Removing a lamp from Home Assistant does not remove it from the mesh network. Reset the lamp if you want to use it elsewhere.
 - If Home Assistant restarts during the first pairing of a new network, the new keys are lost: reset the lamp and pair it again.
 - The lamp does not send its own changes to Home Assistant.
-- Forwarding between two physical lamps over one link is not tested yet.
+- Whether commands for one lamp go through the link of another physical lamp is not recorded yet.
 - Colour and colour temperature mapping are not physically confirmed.
 - A change of the IV Index or a key refresh in the mesh network stops sending until you repair the configuration. There is no automatic recovery.
 
