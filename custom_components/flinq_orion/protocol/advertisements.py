@@ -1,5 +1,6 @@
 """Standard mesh service-data classification without guessing Tuya PID offsets."""
 
+from dataclasses import dataclass
 from hmac import compare_digest
 from .crypto import aes_block, k1, k3, s1
 
@@ -57,6 +58,27 @@ def raw_service_data(raw: bytes) -> dict[str, bytes]:
             result[f"0000{uuid:04x}-0000-1000-8000-00805f9b34fb"] = value[2:]
         offset += 1 + length
     return result
+
+
+@dataclass(frozen=True)
+class UnprovisionedDevice:
+    """Tuya device UUID: MAC (6) + mesh category (2) + product key (8 ASCII)."""
+
+    mac: str
+    category: int
+    product_key: bytes
+
+
+def unprovisioned_device(service_data: dict[str, bytes]) -> UnprovisionedDevice | None:
+    """Unprovisioned Device beacon data of the 0x1827 service (Mesh 7.1.2.2.1)."""
+    data = service_data.get(PROVISIONING)
+    if data is None or len(data) != 18:
+        return None
+    return UnprovisionedDevice(
+        ":".join(f"{byte:02X}" for byte in data[:6]),
+        int.from_bytes(data[6:8], "big"),
+        bytes(data[8:16]),
+    )
 
 
 def identity_material(net_key: bytes) -> tuple[bytes, bytes]:

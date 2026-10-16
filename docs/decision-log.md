@@ -440,3 +440,70 @@ README and to provide a description and topics for the repository.
 The integration icon in `custom_components/flinq_orion/brand/` stays (D-020).
 
 **Decision.** As in the Decision column, chosen by Sylvan Loves. Status: settled.
+
+## D-022 Design of pairing (provisioning) in 1.1.0 (2026-10-15)
+
+**Context.** D-017 chose pairing in this integration. This entry records the design answers
+of the planning round and the plan that the user approved.
+
+**Considerations.**
+- An Orion in pairing mode advertised 0x1827 service data with ASCII `key5wvvr` in bytes 8
+  to 15 of its UUID (observed once, 2026-10-14). The cloud PID `1ajecbtl` is not in the UUID.
+- Telink's default GATT layout renames the provisioning and proxy services in place after
+  provisioning and does not disconnect; the Orion showed this layout.
+- Tuya: configuration (AppKey, model bind, composition) must finish within 30 s after
+  provisioning; the behaviour on timeout is not documented.
+- An ESPHome proxy keeps stale GATT services unless `clear_cache()` runs while connected;
+  connecting through it took 3 to 19 s in this installation.
+- How the current lamp was paired is unknown, so pairing on the Orion is unproven.
+
+| Question | Options | Recommended | Decision |
+|---|---|---|---|
+| How the current lamp was paired | `tuya_ble_mesh` after reset; Smart Life first; unknown | n/a | unknown |
+| Lamp for the physical test | second lamp; reset the current lamp; offline only first | second lamp | second lamp |
+| Reset procedure | power toggled 3 times; button; unknown | n/a | hold the mode button (duration to confirm) |
+| Scope | new network and existing network; existing only; new only | both | both |
+| Configuration after Complete | same link with fallback to reconnect; always reconnect | same link with fallback | same link with fallback |
+| Configuration fails after pairing | keep the lamp and offer "Finish configuration"; discard | keep | keep |
+| Devices that can be paired | Orion only; every Tuya SIG Mesh light | Orion only | Orion only |
+| Publication Set to the controller | not now; include | not now | include |
+
+**Recommendation.** As in the Recommended column; the plan is in the approved planning file
+of 2026-10-15.
+
+**Decision.** As in the Decision column, chosen by Sylvan Loves; plan approved. Status:
+settled for the questions; the physical behaviour of the Orion is open until the test on the
+second lamp.
+
+## D-023 Implementation choices in 1.1.0 (2026-10-15)
+
+**Context.** While building the approved pairing plan (D-022), some details came up that the
+plan did not settle, and one detail differs from the plan. They are recorded for review.
+
+| Question | Plan | Choice | Reason |
+|---|---|---|---|
+| First lamp address | lowest free block from 0x0002 | lowest free block from 0x0010 | room for controller addresses: the existing network already uses 1 (Tuya BLE Mesh) and 2 (this integration) |
+| Name of the pairing store | `flinq_orion.{entry_id}.pairing` | `flinq_orion.pairing.{network fingerprint}` | a new network has no entry ID before its first lamp is paired |
+| "Pair a new lamp" from Add integration when networks exist | not settled | choose a network or "New mesh network" | the same screen serves discovery with two or more networks |
+| Order of model binds | light and vendor models first | light models, then the Tuya vendor model, then the other non-foundation models | the light works first if the lamp stops configuration early |
+| Models that publish to the controller | 0x1000, 0x1300, 0x1303, 0x1307 | as planned; the Tuya vendor model does not publish | unknown what the vendor model publishes |
+| Restart during the first pairing of a new network | not settled | the new keys are lost; the README says to reset and pair again | keys are stored only when the network entry is created |
+| Result when a lamp is in pairing mode in a configured network | never offered | as planned, also in discovery | the working lamp entered pairing mode by itself on 2026-10-14 |
+
+**Recommendation.** Keep these choices; change the first lamp address back to 0x0002 only if
+the user prefers the plan.
+
+**Decision.** Made during implementation; status: open until reviewed by Sylvan Loves.
+
+## D-024 Beta for the first pairing test (2026-10-15)
+
+**Context.** Pairing (D-022) is tested against sample data and simulated lamps, not on a real
+Orion. D-023 left the first lamp address open for review.
+
+| Question | Options | Recommended | Decision |
+|---|---|---|---|
+| Release of 1.1.0 | prerelease 1.1.0b1 for the test on the second lamp, then pull request and 1.1.0; pull request and 1.1.0 at once; nothing yet | prerelease first | prerelease 1.1.0b1 first |
+| First lamp address (D-023) | from 0x0010; from 0x0002 as in the plan | from 0x0010 | from 0x0010 |
+
+**Decision.** As in the Decision column, chosen by Sylvan Loves. Status: settled. This adds a
+beta step to the release of D-022 and closes the address question of D-023.

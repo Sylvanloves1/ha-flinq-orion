@@ -86,12 +86,14 @@ def advertising(service_data):
 @pytest.mark.asyncio
 async def test_config_flow_creates_a_network_with_its_first_lamp():
     flow = config_flow(config_hass())
-    form = await flow.async_step_user()
-    assert form["type"] == "form"
-    invalid = await flow.async_step_user({"address": "bad", "name": "Garden"})
+    menu = await flow.async_step_user()
+    assert menu["type"] == "menu" and menu["menu_options"] == ["pair_network", "manual"]
+    form = await flow.async_step_manual()
+    assert form["type"] == "form" and form["step_id"] == "manual"
+    invalid = await flow.async_step_manual({"address": "bad", "name": "Garden"})
     assert invalid["errors"]["address"] == "invalid_address"
     with advertising(None):
-        result = await flow.async_step_user({"address": ADDRESS.lower(), "name": "Garden"})
+        result = await flow.async_step_manual({"address": ADDRESS.lower(), "name": "Garden"})
     assert result["type"] == "create_entry" and result["version"] == 2
     assert result["title"] == NETWORK_TITLE and result["data"] == {}
     assert list(result["subentries"]) == [
@@ -110,12 +112,12 @@ async def test_a_lamp_of_a_configured_network_joins_that_network():
     hass = config_hass([network(lamp_subentry())])
     flow = config_flow(hass)
     with advertising({PROXY_SERVICE: NETWORK_ID}):
-        result = await flow.async_step_user({"address": SECOND, "name": "Porch"})
+        result = await flow.async_step_manual({"address": SECOND, "name": "Porch"})
     assert result["type"] == "abort" and result["reason"] == "lamp_added"
     added = hass.config_entries.async_add_subentry.call_args.args[1]
     assert added.title == "Porch" and added.unique_id == SECOND
     assert dict(added.data) == {"address": SECOND, "node_address": None}
-    result = await config_flow(hass).async_step_user({"address": ADDRESS, "name": "Again"})
+    result = await config_flow(hass).async_step_manual({"address": ADDRESS, "name": "Again"})
     assert result["reason"] == "already_configured"
 
 
@@ -149,7 +151,7 @@ async def test_discovery_offers_only_identified_lamps():
         options={},
     )
     result = await discover(config_hass(providers=[provider]), service_data=other)
-    assert result["type"] == "form" and result["step_id"] == "user"
+    assert result["type"] == "form" and result["step_id"] == "manual"
 
 
 def lamp_flow(hass, home, source="user", subentry=None):
@@ -179,13 +181,15 @@ async def test_add_lamp_lists_lamps_of_this_network_first():
         "custom_components.flinq_orion.config_flow.bluetooth.async_discovered_service_info",
         return_value=nearby,
     ):
-        form = await flow.async_step_user()
+        menu = await flow.async_step_user()
+        assert menu["menu_options"] == ["existing"]  # no running session: no pairing
+        form = await flow.async_step_existing()
         selector = form["data_schema"].schema["address"]
         options = [option["value"] for option in selector.config["options"]]
         assert options == [SECOND, "AA:00:00:00:00:01"]
-        result = await flow.async_step_user({"address": ADDRESS, "name": "Again"})
+        result = await flow.async_step_existing({"address": ADDRESS, "name": "Again"})
         assert result["errors"]["address"] == "lamp_configured"
-    result = await flow.async_step_user({"address": SECOND, "name": "Porch"})
+    result = await flow.async_step_existing({"address": SECOND, "name": "Porch"})
     assert result["type"] == "create_entry" and result["unique_id"] == SECOND
     assert result["data"] == {"address": SECOND, "node_address": None}
 
@@ -197,7 +201,7 @@ async def test_lamp_settings_change_name_address_and_device_key():
     hass = config_hass([home])
     flow = lamp_flow(hass, home, "reconfigure", subentry)
     form = await flow.async_step_reconfigure()
-    assert form["step_id"] == "reconfigure"
+    assert form["step_id"] == "settings"
     result = await flow.async_step_reconfigure({"name": "Porch", "node_address": 2})
     assert result["errors"]["node_address"] == "invalid_node"
     result = await flow.async_step_reconfigure(

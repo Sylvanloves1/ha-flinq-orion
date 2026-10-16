@@ -761,3 +761,26 @@ One observation, one lamp.
   2 s timeout) timed out and the later reads answered. Hypothesis, not tested: the lamp is busy
   with these broadcasts directly after the link setup.
 - The vendor status query still returns an empty DP report (`01`).
+
+## Pairing mode of the Orion (from the captures of 2026-10-14)
+
+- 12:15:09: a fresh GATT discovery returned the Telink provisioning layout: service 0x1827
+  with 0x2ADB/0x2ADC, and the proxy characteristics 0x2ADD/0x2ADE under 0x7FDD. In proxy mode
+  the same characteristics sit under 0x7FDD (0x2ADB/0x2ADC) and 0x1828 (0x2ADD/0x2ADE). This
+  matches the default layout of the Telink SIG Mesh SDK (`app_att.c`): the service UUIDs swap
+  at fixed handles after provisioning.
+- From 12:15:12 HA recorded Unprovisioned Device service data (8 records):
+  `dc234f6ea012 5415 6b657935777676 72 0000`. Bytes 0 to 5 are the MAC address, bytes 6 and 7
+  the mesh category 0x5415, bytes 8 to 15 ASCII `key5wvvr`, bytes 16 and 17 the OOB
+  information (0x0000). The cloud PID `1ajecbtl` is not in the UUID. 1.1.0 recognises an Orion
+  in pairing mode by `key5wvvr` (observed once, on one lamp).
+- 12:17:14: the next discovery returned the proxy layout again. The lamp returned to its
+  network by itself after about 2 minutes. Tuya documents 6 minutes for the TLSR825x light;
+  the cause of the shorter time is unknown.
+
+## First pairing of an Orion by this integration (2026-10-16)
+
+User report with 1.1.0b1: the second lamp was put in pairing mode with its mode button and
+paired into the existing network through "Add lamp, Pair a new lamp". Both lamps work. This is
+one observation without diagnostics: the Capabilities (algorithm, element count), the
+configuration results and the address that the lamp received are not recorded.

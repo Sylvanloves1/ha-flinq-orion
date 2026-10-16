@@ -5,6 +5,28 @@
     "step": {
       "user": {
         "title": "FlinQ Orion",
+        "menu_options": {
+          "pair_network": "Pair a new lamp (pairing mode)",
+          "manual": "Add a lamp with existing mesh keys"
+        }
+      },
+      "pair_network": {
+        "title": "Choose the mesh network",
+        "description": "Pair the lamp into one of your networks, or create a new network with new keys.",
+        "data": {
+          "network": "Mesh network"
+        }
+      },
+      "pair": {
+        "title": "Pair a lamp",
+        "description": "Hold the mode button of the lamp until it blinks: it is then in pairing mode for up to 6 minutes. Keep the lamp close to a Bluetooth proxy. Pairing resets the lamp into this network: it leaves Smart Life. Lamp: {address}.",
+        "data": {
+          "address": "Lamp in pairing mode",
+          "name": "Lamp name"
+        }
+      },
+      "manual": {
+        "title": "Add a lamp with existing mesh keys",
         "description": "Add a lamp without resetting it. A lamp of a configured mesh network is added to that network. Otherwise a new network is created: set its existing mesh keys in Options. Without keys the integration stays in observation mode.",
         "data": {
           "address": "Bluetooth address",
@@ -20,13 +42,24 @@
       }
     },
     "error": {
-      "invalid_address": "Invalid Bluetooth address"
+      "invalid_address": "Invalid Bluetooth address",
+      "no_lamp_found": "No lamp in pairing mode found. Put the lamp in pairing mode and try again."
     },
     "abort": {
       "already_configured": "This lamp is already configured",
       "lamp_added": "The lamp was added to the network {network}",
       "not_in_network": "The device does not belong to a configured mesh network",
-      "not_identified": "The device cannot be identified as a FlinQ Orion lamp; add it manually"
+      "not_identified": "The device cannot be identified as a FlinQ Orion lamp; add it manually",
+      "lamp_paired": "The lamp was paired into the network {network}",
+      "pair_not_found": "The lamp could not be reached. Check that it is in pairing mode and close to a Bluetooth proxy.",
+      "pair_timeout": "The lamp stopped answering during pairing. Put it in pairing mode again and retry.",
+      "pair_oob_required": "The lamp requires an authentication value that this integration does not know.",
+      "pair_confirmation_failed": "The lamp failed the security check of pairing.",
+      "pair_cannot_assign_addresses": "No free mesh address is left in this network.",
+      "pair_failed": "Pairing failed. Put the lamp in pairing mode again and retry; download the diagnostics if it keeps failing."
+    },
+    "progress": {
+      "pairing": "Pairing and configuring the lamp. This takes up to a minute. Keep the lamp close to the Bluetooth proxy."
     }
   },
   "config_subentries": {
@@ -38,13 +71,44 @@
       "step": {
         "user": {
           "title": "Add lamp",
+          "menu_options": {
+            "pair": "Pair a new lamp (pairing mode)",
+            "existing": "Add a lamp that is already in this network",
+            "restore": "Restore an interrupted pairing"
+          }
+        },
+        "pair": {
+          "title": "Pair a lamp",
+          "description": "Hold the mode button of the lamp until it blinks: it is then in pairing mode for up to 6 minutes. Keep the lamp close to a Bluetooth proxy. Pairing resets the lamp into this network: it leaves Smart Life. Lamp: {address}.",
+          "data": {
+            "address": "Lamp in pairing mode",
+            "name": "Lamp name"
+          }
+        },
+        "existing": {
+          "title": "Add a lamp that is already in this network",
           "description": "Select a nearby lamp or enter its Bluetooth address. 'This network' means the lamp advertises the Network ID of these keys. A lamp with a low battery advertises only Node Identity and shows 'network not verified'. The mesh address is detected on the first connection.",
           "data": {
             "address": "Bluetooth address",
             "name": "Lamp name"
           }
         },
+        "restore": {
+          "title": "Restore an interrupted pairing",
+          "description": "Pairing of this lamp ended after the lamp joined the network, for example by a restart. The lamp is added with its stored DeviceKey; then use Reconfigure, Finish configuration.",
+          "data": {
+            "address": "Bluetooth address",
+            "name": "Lamp name"
+          }
+        },
         "reconfigure": {
+          "title": "Lamp",
+          "menu_options": {
+            "finish": "Finish configuration",
+            "settings": "Lamp settings"
+          }
+        },
+        "settings": {
           "title": "Lamp settings",
           "description": "Mesh address 0 means: detect it on the next connection. The DeviceKey is optional and is only used for composition data and model binding.",
           "data": {
@@ -58,10 +122,24 @@
         "invalid_address": "Invalid Bluetooth address",
         "lamp_configured": "This lamp is already configured",
         "invalid_key": "Enter a nonzero 128-bit hexadecimal key",
-        "invalid_node": "The lamp address must differ from the controller address"
+        "invalid_node": "The lamp address must differ from the controller address",
+        "no_lamp_found": "No lamp in pairing mode found. Put the lamp in pairing mode and try again."
       },
       "abort": {
-        "reconfigure_successful": "The lamp settings were saved"
+        "reconfigure_successful": "The lamp settings were saved",
+        "pair_not_found": "The lamp could not be reached. Check that it is in pairing mode and close to a Bluetooth proxy.",
+        "pair_timeout": "The lamp stopped answering during pairing. Put it in pairing mode again and retry.",
+        "pair_oob_required": "The lamp requires an authentication value that this integration does not know.",
+        "pair_confirmation_failed": "The lamp failed the security check of pairing.",
+        "pair_cannot_assign_addresses": "No free mesh address is left in this network.",
+        "pair_failed": "Pairing failed. Put the lamp in pairing mode again and retry; download the diagnostics if it keeps failing.",
+        "configured": "The lamp is configured",
+        "finish_failed": "The configuration did not finish. Check the battery and the distance to the Bluetooth proxy, then try again.",
+        "nothing_to_restore": "There is no interrupted pairing to restore"
+      },
+      "progress": {
+        "pairing": "Pairing and configuring the lamp. This takes up to a minute. Keep the lamp close to the Bluetooth proxy.",
+        "configuring": "Configuring the lamp: AppKey, model bindings and publication. Keep the lamp close to the Bluetooth proxy."
       }
     }
   },
@@ -108,6 +186,19 @@
       "import_iv_mismatch": "Stored IV Index differs from the authenticated beacon; recovery is required",
       "import_key_refresh": "Authenticated beacon indicates key refresh; this import cannot safely activate",
       "network_in_use": "Another entry already uses this NetKey; add the lamp to that network instead"
+    }
+  },
+  "selector": {
+    "network": {
+      "options": {
+        "new": "New mesh network"
+      }
+    }
+  },
+  "issues": {
+    "configuration_incomplete": {
+      "title": "Finish the configuration of {name}",
+      "description": "{name} is paired, but its configuration did not finish, so it does not react to commands yet. Open the lamp under FlinQ Orion, select Reconfigure and then Finish configuration."
     }
   },
   "entity": {

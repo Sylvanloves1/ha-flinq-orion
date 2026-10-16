@@ -99,6 +99,9 @@ class DeviceProfile:
     temperature_raw_range: tuple[int, int]
     # Kelvin range Home Assistant's Tuya integration used for this lamp; not measured.
     default_kelvin_range: tuple[int, int]
+    # Bytes 8–15 of the unprovisioned device UUID. Observed once on 2026-10-14; it is not
+    # the cloud PID (D-022).
+    product_key: bytes
 
 
 FLINQ_ORION_FQC8274_PROFILE = DeviceProfile(
@@ -110,4 +113,5 @@ FLINQ_ORION_FQC8274_PROFILE = DeviceProfile(
     brightness_range=(10, 1000),
     temperature_raw_range=(0, 1000),
     default_kelvin_range=(2000, 6500),
+    product_key=b"key5wvvr",
 )
