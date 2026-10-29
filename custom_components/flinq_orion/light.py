@@ -35,6 +35,12 @@ class OrionLight(OrionEntity, LightEntity):
         super().__init__(coordinator, "light")
 
     @property
+    def available(self):
+        # Keep HA controls usable while idle or out of range. Each command ensures
+        # a connection and reports a failure if the lamp cannot be reached.
+        return True
+
+    @property
     def supported_color_modes(self):
         modes = set()
         if self.device.supports_color:

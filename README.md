@@ -143,10 +143,10 @@ Each lamp is a device with these entities:
 
 | Mode | Behaviour |
 |---|---|
-| `on_demand` (default) | A command opens a link. The link closes after 60 s without activity. The state is read at start-up and every 30 minutes while the lamp is seen. The light is available when the lamp advertised within the availability timeout (default 300 s). |
-| `persistent` | One link stays open and reconnects after a loss. The light is available only while the link is up. |
+| `on_demand` (default) | A command opens a link. The link closes after 60 s without activity. The state is read at start-up and every 30 minutes while the lamp is seen. The light stays available even without recent Bluetooth advertisements. |
+| `persistent` | One link stays open and reconnects after a loss. The light stays available when the link is down; commands reconnect before sending. |
 
-The first command after a pause takes 1–4 s, because the link must be set up. Commands within 60 s use the open link.
+The first command after a pause takes 1–4 s, because the link must be set up. Commands within 60 s use the open link. If connecting or sending fails, the action reports an error and the light remains available for another attempt. State changes are shown only after a report from the lamp.
 
 One link serves the whole network. A command for another lamp goes through the lamp that holds the link. If that lamp does not answer, the integration connects to the other lamp directly and sends the command once more.
 
@@ -183,7 +183,7 @@ response_variable: status
 | Symptom | What to do |
 |---|---|
 | "Lamp not reachable over Bluetooth" | Check the Battery status and charge the lamp. Check that a Bluetooth proxy is near the lamp and has a free connection slot. |
-| The light is unavailable | The lamp did not advertise within the availability timeout. Usually the battery is low or the lamp is out of range. |
+| A light command fails | The light stays available so you can retry. Check the battery, Bluetooth range and free proxy connection slots. |
 | The first command is slow | Normal in `on_demand` mode: the link is set up first (1–4 s). |
 | No light entity | The light appears after the lamp reported its power state. Select **Query status and capabilities**. |
 | Changes made on the lamp do not show | The lamp does not report its own changes, such as motion switching. |

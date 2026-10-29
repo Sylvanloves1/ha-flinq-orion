@@ -6,6 +6,8 @@ import pytest
 from bleak_retry_connector import MAX_CONNECT_ATTEMPTS
 from custom_components.flinq_orion import session as session_module
 from custom_components.flinq_orion.entity import OrionEntity
+from custom_components.flinq_orion.light import OrionLight
+from homeassistant.exceptions import HomeAssistantError
 from custom_components.flinq_orion.protocol.errors import DeviceUnavailableError
 from test_active_mesh import Peer
 from test_entities import Coordinator
@@ -151,6 +153,44 @@ def test_existing_entries_default_to_on_demand():
     coordinator = Coordinator()
     coordinator.data = {"available": True, "connected": False, "responsive": False}
     assert OrionEntity(coordinator, "power").available is True
+
+
+@pytest.mark.parametrize("mode", ["on_demand", "persistent"])
+@pytest.mark.asyncio
+async def test_light_stays_available_and_connects_before_control(tmp_path, mode):
+    c, s = await started_session(tmp_path, connection_mode=mode)
+    light = OrionLight(c)
+    peer = Peer()
+    connector = AsyncMock(return_value=Client(peer))
+    device_patch, connect_patch = patched_connection(connector)
+    try:
+        with device_patch, connect_patch:
+            # An existing light has capabilities from an earlier status report.
+            await c.device.query()
+            await s._close_link()
+            connector.reset_mock()
+            connector.return_value = Client(peer)
+            c.data.update(available=False, connected=False, responsive=False)
+            assert light.available
+            await light.async_turn_on()
+            assert s.connected and light.is_on is True
+            connector.assert_awaited_once()
+            await s._close_link()
+            c.data.update(available=False, responsive=False)
+            assert light.available
+            # A failed connection surfaces as an action error and leaves the
+            # confirmed state intact; the control remains usable for another try.
+            connector.side_effect = OSError("offline")
+            with pytest.raises(HomeAssistantError, match="not reachable"):
+                await light.async_turn_off()
+            assert light.available and light.is_on is True
+            connector.side_effect = None
+            connector.return_value = Client(peer)
+            await light.async_turn_off()
+            assert s.connected and light.is_on is False and light.available
+    finally:
+        await s.stop()
+        await c.stop()
 
 
 @pytest.mark.asyncio

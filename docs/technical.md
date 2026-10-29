@@ -28,8 +28,8 @@ One Bluetooth link serves the whole network (D-015). A command for another lamp 
 
 | Mode | Behaviour |
 |---|---|
-| `on_demand` (default) | A command opens a link; the link closes after 60 s without activity. The status is refreshed when Home Assistant starts and then every 30 minutes, when the lamp is seen. If the lamp cannot be reached within about 20 s, the command fails with "Lamp not reachable over Bluetooth". The light is available when the lamp advertised within the availability timeout. |
-| `persistent` | The 0.2.9b1 behaviour: keep one link open and reconnect with backoff. The light is available only while the link is up. |
+| `on_demand` (default) | A command opens a link; the link closes after 60 s without activity. The status is refreshed when Home Assistant starts and then every 30 minutes, when the lamp is seen. If the lamp cannot be reached within about 20 s, the command fails with "Lamp not reachable over Bluetooth". The light stays available even without recent Bluetooth advertisements. |
+| `persistent` | The 0.2.9b1 behaviour: keep one link open and reconnect with backoff. The light stays available when the link is down; commands reconnect before sending. |
 
 The first command after an idle period takes longer (measured: 1–4 s to connect and set up). Follow-up commands within 60 s use the open link. Since 0.4.0b1 the connection mode applies to the whole network. The lamp does not report its own changes, such as PIR switching, to Home Assistant in either mode. Decisions: [docs/decision-log.md](decision-log.md), D-009 and D-010.
 
