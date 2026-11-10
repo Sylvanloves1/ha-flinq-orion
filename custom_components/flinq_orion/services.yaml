@@ -59,7 +59,7 @@ dump_capabilities:
         device:
           integration: flinq_orion
 bind_vendor_model:
-  name: Advanced: bind existing AppKey to Tuya vendor model
+  name: "Advanced: bind existing AppKey to Tuya vendor model"
   description: Explicit configuration write, requiring the existing DeviceKey and AppKey index. Adds a model binding; never resets or provisions the lamp.
   fields:
     device_id:
