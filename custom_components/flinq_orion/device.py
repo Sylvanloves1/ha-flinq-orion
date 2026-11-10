@@ -483,10 +483,12 @@ class OrionDevice:
         if not self.sig_temperature_range:
             # The lamp never answered CTL Temperature Range Get, so the SIG Kelvin scale is
             # unknown. Use the schema data point in white mode instead (D-011).
-            return await self._write(
+            response = await self._write(
                 ORION_DPS[2].encode("white"), ORION_DPS[4].encode(raw), exact=True
             )
-        return await self._request(
+            self._confirmed_color_mode("temperature")
+            return response
+        response = await self._request(
             bytes.fromhex("8264")
             + kelvin.to_bytes(2, "little")
             + bytes(2)
@@ -498,6 +500,8 @@ class OrionDevice:
                 and int.from_bytes(data[4:6] if len(data) == 9 else data[:2], "little") == kelvin
             ),
         )
+        self._confirmed_color_mode("temperature")
+        return response
 
     async def set_color(self, hs, brightness):
         if not self.supports_color:
@@ -517,7 +521,7 @@ class OrionDevice:
         rgb = colorsys.hsv_to_rgb(hs[0] / 360, hs[1] / 100, brightness / 255)
         hue, lightness, saturation = colorsys.rgb_to_hls(*rgb)
         values = [round(lightness * 65535), round(hue * 65535), round(saturation * 65535)]
-        return await self._request(
+        response = await self._request(
             bytes.fromhex("8276")
             + b"".join(n.to_bytes(2, "little") for n in values)
             + bytes((await self.next_tid(), 0, 0)),
@@ -528,6 +532,20 @@ class OrionDevice:
                 and data[:6] == b"".join(n.to_bytes(2, "little") for n in values)
             ),
         )
+        self._confirmed_color_mode("hs")
+        return response
+
+    def _confirmed_color_mode(self, kind):
+        """Record the light mode after the lamp confirmed a SIG colour or temperature set.
+
+        In SIG mode HSL Set does not change DP 2 (work_mode), so the lamp sends no DP 2 report
+        that would switch the mode (seen on a FlinQ Gaia FQC8273). Only the confirmed command
+        shows the new mode.
+        Its status report already notified Home Assistant, so notify again.
+        """
+        if self.state.get("last_color_mode") != kind:
+            self.state["last_color_mode"] = kind
+            self.coordinator.async_set_updated_data(dict(self.coordinator.data))
 
     async def bind_vendor(self, app_key_index):
         if not self.options.get("device_key") or not 0 <= app_key_index <= 4095:
