@@ -12,8 +12,10 @@ async def test_sig_temperature_range_and_set_opcodes():
     c = SimpleNamespace(
         entry=SimpleNamespace(options={"transport_mode": "sig", "node_address": 176}),
         capabilities=DeviceCapabilities(),
+        data={},
         record=Mock(),
         report_received=Mock(),
+        async_set_updated_data=Mock(),
     )
     d = OrionDevice(c)
     d.decode_sig(0x8204, b"\x01")
@@ -47,7 +49,9 @@ async def test_sig_temperature_range_and_set_opcodes():
     await d.set_power(False)
     await d.set_brightness(255)
     await d.set_temperature(4000)
+    assert d.state["last_color_mode"] == "temperature"
     await d.set_color((0, 100), 255)
+    assert d.state["last_color_mode"] == "hs"
     assert calls[0].hex() == "820200070000"
     assert calls[1].hex() == "824cffff070000"
     assert calls[2].hex() == "8264a00f0000070000"
