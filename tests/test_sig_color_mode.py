@@ -6,7 +6,7 @@ report reaches ``OrionDevice.response`` before the request returns.
 """
 
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 import pytest
 from homeassistant.components.light import ColorMode
 from homeassistant.exceptions import HomeAssistantError
@@ -92,22 +92,14 @@ def make(temperature_range=False):
     d.decode_sig(0x8278, b"".join(n.to_bytes(2, "little") for n in WHITE_HSL))
     if temperature_range:
         d.decode_sig(0x8263, b"\x00" + (2000).to_bytes(2, "little") + (6500).to_bytes(2, "little"))
-    d.ensure_connection = Mock(side_effect=_none)
-    d.next_tid = Mock(side_effect=_tid)
+    d.ensure_connection = AsyncMock()
+    d.next_tid = AsyncMock(return_value=7)
     lamp = Lamp(d)
     d.controller = SimpleNamespace(node=176, request=lamp.request)
     light = OrionLight(c)
     seen = []
     c.async_add_listener(lambda: seen.append(light.color_mode))
     return c, light, lamp, seen
-
-
-async def _none():
-    return None
-
-
-async def _tid():
-    return 7
 
 
 @pytest.mark.asyncio
@@ -142,8 +134,19 @@ async def test_temperature_after_colour_returns_to_color_temp(temperature_range)
     assert light.color_mode == ColorMode.COLOR_TEMP
     assert seen[-1] == ColorMode.COLOR_TEMP
     # Without the CTL range the DP fallback is used, with it CTL Temperature Set.
-    sent = lamp.requests[-1]
-    assert sent[:2].hex() == "8264" if temperature_range else sent.startswith(opcode(WRITE))
+    expected = bytes.fromhex("8264") if temperature_range else opcode(WRITE)
+    assert lamp.requests[-1].startswith(expected)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("temperature_range", [False, True])
+async def test_failed_temperature_set_keeps_hs_mode(temperature_range):
+    c, light, lamp, seen = make(temperature_range)
+    await light.async_turn_on(hs_color=(0, 100))
+    lamp.fail = True
+    with pytest.raises(HomeAssistantError):
+        await light.async_turn_on(color_temp_kelvin=2700)
+    assert light.color_mode == ColorMode.HS
 
 
 @pytest.mark.asyncio
@@ -193,4 +196,6 @@ async def test_hs_mode_survives_persist_and_restore():
     await light.async_turn_on(hs_color=(240, 100))
     restored = Coordinator()
     restored.device.restore(c.device.persist())
+    assert restored.device.state["last_color_mode"] == "hs"
     assert OrionLight(restored).color_mode == ColorMode.HS
+    assert OrionLight(restored).hs_color == pytest.approx((240, 100), abs=0.1)
